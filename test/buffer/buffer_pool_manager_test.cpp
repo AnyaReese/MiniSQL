@@ -4,12 +4,12 @@
 #include <random>
 #include <string>
 
+#include "glog/logging.h"
 #include "gtest/gtest.h"
 
 TEST(BufferPoolManagerTest, BinaryDataTest) {
   const std::string db_name = "bpm_test.db";
   const size_t buffer_pool_size = 10;
-
   std::random_device r;
   std::default_random_engine rng(r());
   std::uniform_int_distribution<unsigned> uniform_dist(0, 127);
@@ -23,6 +23,7 @@ TEST(BufferPoolManagerTest, BinaryDataTest) {
 
   // Scenario: The buffer pool is empty. We should be able to create a new page.
   ASSERT_NE(nullptr, page0);
+
   EXPECT_EQ(0, page_id_temp);
 
   char random_binary_data[PAGE_SIZE];
@@ -51,18 +52,23 @@ TEST(BufferPoolManagerTest, BinaryDataTest) {
   }
 
   // Scenario: After unpinning pages {0, 1, 2, 3, 4} we should be able to create 5 new pages
+  
   for (int i = 0; i < 5; ++i) {
     EXPECT_EQ(true, bpm->UnpinPage(i, true));
     EXPECT_TRUE(bpm->FlushPage(i));
   }
+  LOG(WARNING) << "test0" << std::endl;
   for (int i = 0; i < 5; ++i) {
     EXPECT_NE(nullptr, bpm->NewPage(page_id_temp));
     EXPECT_EQ(buffer_pool_size + i, page_id_temp);
     bpm->UnpinPage(page_id_temp, false);
   }
+
   // Scenario: We should be able to fetch the data we wrote a while ago.
   page0 = bpm->FetchPage(0);
+  // LOG(WARNING) << "test0" << page0->GetPageId();
   EXPECT_EQ(0, memcmp(page0->GetData(), random_binary_data, PAGE_SIZE));
+  // LOG(WARNING) << "test1" << std::endl;
   EXPECT_EQ(true, bpm->UnpinPage(0, true));
 
   // Shutdown the disk manager and remove the temporary file we created.

@@ -43,7 +43,7 @@ class BitmapPage {
   /** Note: need to update if modify page structure. */
   static constexpr size_t MAX_CHARS = PageSize - 2 * sizeof(uint32_t);
 
- private:
+ public:
   /** The space occupied by all members of the class should be equal to the PageSize */
   uint32_t page_allocated_;
   uint32_t next_free_page_;

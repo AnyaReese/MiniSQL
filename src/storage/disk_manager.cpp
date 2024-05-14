@@ -56,29 +56,41 @@ page_id_t DiskManager::AllocatePage() {
   uint32_t num_allocated_pages_ = metaPage->GetAllocatedPages();
   uint32_t extents_id = 0;
 
+  
+
 
   // 找到最近一个没有满的分区
   while(metaPage->extent_used_page_[extents_id] == BitmapPage<PAGE_SIZE>::GetMaxSupportedSize() && extents_id < total_extents) extents_id++;
   uint32_t bitmapPageId = 1 + extents_id * (BITMAP_SIZE + 1);
-
   if (extents_id == total_extents) { // 如果所有分区都满了
       auto new_extent = new BitmapPage<PAGE_SIZE>();
+      // LOG(WARNING) << "WritePhysicalPage bitmapPageId_: " << bitmapPageId;
       WritePhysicalPage(bitmapPageId, reinterpret_cast<char *>(new_extent));
       metaPage->extent_used_page_[total_extents] = 0;
       metaPage->num_extents_++;
       total_extents++;
   }
+  // LOG(WARNING) << "bitmapPageId: " << bitmapPageId;
   
   
   auto bitmap = new BitmapPage<PAGE_SIZE>();
+  
+  // 更新元信息页
+
+
   ReadPhysicalPage(bitmapPageId, reinterpret_cast<char*>(bitmap));
-  uint32_t page_offset = -1;
+  
+  uint32_t page_offset = 0;
+  // LOG(WARNING) << "next_free_page_: " << bitmap->next_free_page_;
+  // LOG(WARNING) << "page_allocated_: " << bitmap->page_allocated_;
+  
+
   bitmap->AllocatePage(page_offset);
 
-  // 更新元信息页
   WritePhysicalPage(bitmapPageId, reinterpret_cast<char *>(bitmap));
   metaPage->num_allocated_pages_++;
   metaPage->extent_used_page_[extents_id]++;
+  
   WritePhysicalPage(META_PAGE_ID, meta_data_);
 
 
@@ -94,6 +106,7 @@ page_id_t DiskManager::AllocatePage() {
  * DONE
  */
 void DiskManager::DeAllocatePage(page_id_t logical_page_id) {
+  LOG(WARNING) << "DeAllocatePage: ";
   DiskFileMetaPage* metaPage = reinterpret_cast<DiskFileMetaPage*>(GetMetaData());
 
   int extents_id = logical_page_id / BITMAP_SIZE; // 计算分区索引
@@ -106,7 +119,10 @@ void DiskManager::DeAllocatePage(page_id_t logical_page_id) {
 
   if (!bitmap->IsPageFree(page_offset)) {
     bitmap->DeAllocatePage(page_offset);
+
     WritePhysicalPage(bitmapPageId, reinterpret_cast<const char*>(bitmap));
+
+
 
     // 更新元信息页
     DiskFileMetaPage* metaPage = reinterpret_cast<DiskFileMetaPage*>(GetMetaData());
@@ -144,13 +160,9 @@ bool DiskManager::IsPageFree(page_id_t logical_page_id) {
  * DONE
  */
 page_id_t DiskManager::MapPageId(page_id_t logical_page_id) { //将逻辑页号转换成物理页号
-  int extents_id = logical_page_id / BITMAP_SIZE;
-  int page_offset = logical_page_id % BITMAP_SIZE;
-
-
-  page_id_t physical_page_id = 1 + extents_id * (BITMAP_SIZE + 1) + page_offset;
-
-  return physical_page_id;
+  uint32_t extent_meta_page_num = (logical_page_id / BITMAP_SIZE + 1);
+  uint32_t total_extra_meta_page_num = extent_meta_page_num + 1;
+  return total_extra_meta_page_num + logical_page_id;
 }
 
 
@@ -173,11 +185,11 @@ void DiskManager::ReadPhysicalPage(page_id_t physical_page_id, char *page_data) 
     db_io_.seekp(offset);
     db_io_.read(page_data, PAGE_SIZE);
     // if file ends before reading PAGE_SIZE
+    
+
     int read_count = db_io_.gcount();
     if (read_count < PAGE_SIZE) {
-#ifdef ENABLE_BPM_DEBUG
       LOG(INFO) << "Read less than a page" << std::endl;
-#endif
       memset(page_data + read_count, 0, PAGE_SIZE - read_count);
     }
   }
@@ -187,6 +199,13 @@ void DiskManager::WritePhysicalPage(page_id_t physical_page_id, const char *page
   size_t offset = static_cast<size_t>(physical_page_id) * PAGE_SIZE;
   // set write cursor to offset
   db_io_.seekp(offset);
+
+  // if(physical_page_id == 1){
+  //   const BitmapPage<PAGE_SIZE> *bitmap_page = reinterpret_cast<const BitmapPage<PAGE_SIZE> *>(page_data);
+  //   LOG(INFO) << "BitmapPage next_free_page_: " << bitmap_page->next_free_page_;
+  // }
+
+
   db_io_.write(page_data, PAGE_SIZE);
   // check for I/O error
   if (db_io_.bad()) {
