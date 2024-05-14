@@ -20,6 +20,14 @@ class DiskFileMetaPage {
     return extent_used_page_[extent_id];
   }
 
+  // 设置指定分区的已使用页数
+  void SetExtentUsedPage(uint32_t extent_id, uint32_t used_pages) {
+    if (extent_id >= num_extents_) {
+      throw std::out_of_range("Extent ID is out of range");
+    }
+    extent_used_page_[extent_id] = used_pages;
+  }
+
  public:
   uint32_t num_allocated_pages_{0};
   uint32_t num_extents_{0};  // each extent consists with a bit map and BIT_MAP_SIZE pages

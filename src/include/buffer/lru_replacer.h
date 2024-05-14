@@ -36,6 +36,10 @@ class LRUReplacer : public Replacer {
   size_t Size() override;
 
 private:
+  mutex latch_;
+  size_t max_pages_;
+  list<frame_id_t> lru_list_;
+  unordered_set<frame_id_t> frame_set_; // Set to quickly check presence of a frame
   // add your own private member variables here
 };
 
