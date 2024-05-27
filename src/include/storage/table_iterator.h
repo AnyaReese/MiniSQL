@@ -13,7 +13,6 @@ public:
  explicit TableIterator(TableHeap *table_heap, RowId rid, Txn *txn);
 
  explicit TableIterator(const TableIterator &other);
-
   virtual ~TableIterator();
 
   bool operator==(const TableIterator &itr) const;
@@ -32,6 +31,12 @@ public:
 
 private:
   // add your own private member variables here
+  void FindNextValidRow();
+
+  TableHeap *table_heap_;
+  RowId current_row_id_;
+  Row current_row_;
+  Txn *txn_;
 };
 
 #endif  // MINISQL_TABLE_ITERATOR_H

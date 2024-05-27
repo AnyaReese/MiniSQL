@@ -22,7 +22,10 @@
   do {                                       \
     *reinterpret_cast<Type *>(Buf) = (Data); \
   } while (0)
+  
+#define MACH_WRITE_UINT8(Buf, Data) MACH_WRITE_TO(uint8_t, (Buf), (Data))
 #define MACH_WRITE_UINT32(Buf, Data) MACH_WRITE_TO(uint32_t, (Buf), (Data))
+#define MACH_WRITE_INT8(Buf, Data) MACH_WRITE_TO(int8_t, (Buf), (Data))
 #define MACH_WRITE_INT32(Buf, Data) MACH_WRITE_TO(int32_t, (Buf), (Data))
 #define MACH_WRITE_STRING(Buf, Str)         \
   do {                                      \
@@ -30,8 +33,11 @@
   } while (0)
 
 #define MACH_READ_FROM(Type, Buf) (*reinterpret_cast<const Type *>(Buf))
+#define MACH_READ_UINT8(Buf) MACH_READ_FROM(uint8_t, (Buf))
 #define MACH_READ_UINT32(Buf) MACH_READ_FROM(uint32_t, (Buf))
+#define MACH_READ_INT8(Buf) MACH_READ_FROM(int8_t, (Buf))
 #define MACH_READ_INT32(Buf) MACH_READ_FROM(int32_t, (Buf))
+#define MACH_READ_STRING(Buf, Len) std::string(reinterpret_cast<const char *>(Buf), (Len))
 
 #define MACH_STR_SERIALIZED_SIZE(Str) (4 + Str.length())
 
