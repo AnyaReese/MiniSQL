@@ -4,7 +4,7 @@
 #include "storage/table_heap.h"
 
 /**
- * TODO: Student Implement
+ * DONE
  */
 TableIterator::TableIterator(TableHeap *table_heap, RowId &rid, Txn *txn, Row *row) {
   this->table_heap_ = table_heap;

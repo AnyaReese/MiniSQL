@@ -10,7 +10,7 @@
 
 
 /**
- * TODO: Student Implement 
+ * DONE
  *       向堆表中插入一条记录，插入记录后生成的RowId需要通过row对象返回（即row.rid_）
  */
 bool TableHeap::InsertTuple(Row &row, Txn *txn) {
@@ -62,7 +62,7 @@ bool TableHeap::MarkDelete(const RowId &rid, Txn *txn) {
 }
 
 /**
- * TODO: Student Implement
+ * DONE
  *       将RowId为rid的记录old_row替换成新的记录new_row，并将new_row的RowId通过new_row.rid_返回；
  */
 bool TableHeap::UpdateTuple(Row &new_row, const RowId &rid, Txn *txn) {
@@ -88,7 +88,7 @@ bool TableHeap::UpdateTuple(Row &new_row, const RowId &rid, Txn *txn) {
 }
 
 /**
- * TODO: Student Implement
+ * DONE
  *       从物理意义上删除这条记录
  */
 void TableHeap::ApplyDelete(const RowId &rid, Txn *txn) {
@@ -118,7 +118,7 @@ void TableHeap::RollbackDelete(const RowId &rid, Txn *txn) {
 }
 
 /**
- * TODO: Student Implement
+ * DONE
  *       获取RowId为row->rid_的记录
  */
 bool TableHeap::GetTuple(Row *row, Txn *txn) {
@@ -148,7 +148,7 @@ void TableHeap::DeleteTable(page_id_t page_id) {
 }
 
 /**
- * TODO: Student Implement
+ * DONE
  */
 TableIterator TableHeap::Begin(Txn *txn) {
   // Start from the first page
@@ -169,7 +169,7 @@ TableIterator TableHeap::Begin(Txn *txn) {
 }
 
 /**
- * TODO: Student Implement
+ * DONE
  */
 TableIterator TableHeap::End() {
   return TableIterator(nullptr, RowId(-1, -1), nullptr);
