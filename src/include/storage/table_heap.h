@@ -113,7 +113,11 @@ class TableHeap {
         schema_(schema),
         log_manager_(log_manager),
         lock_manager_(lock_manager) {
-    ASSERT(false, "Not implemented yet.");
+    auto first_page = reinterpret_cast<TablePage *>(buffer_pool_manager->NewPage(first_page_id_));
+    ASSERT(first_page != nullptr, "[ERROR] create firstPage in table heap error!");
+    first_page->Init(first_page_id_, PAGE_SIZE, log_manager, txn);
+    buffer_pool_manager->UnpinPage(first_page_id_, true);
+    schema_ = schema;
   };
 
   explicit TableHeap(BufferPoolManager *buffer_pool_manager, page_id_t first_page_id, Schema *schema,

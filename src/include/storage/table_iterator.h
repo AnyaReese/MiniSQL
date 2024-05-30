@@ -10,9 +10,10 @@ class TableHeap;
 class TableIterator {
 public:
  // you may define your own constructor based on your member variables
- explicit TableIterator(TableHeap *table_heap, RowId rid, Txn *txn);
+  explicit TableIterator(TableHeap *table_heap, RowId rid, Txn *txn):table_heap_(table_heap), row_id_(rid), txn_(txn){}
+  explicit TableIterator(TableHeap *table_heap, RowId &rid, Txn *txn, Row *row);
 
- explicit TableIterator(const TableIterator &other);
+  explicit TableIterator(const TableIterator &other);
   virtual ~TableIterator();
 
   bool operator==(const TableIterator &itr) const;
@@ -34,8 +35,8 @@ private:
   void FindNextValidRow();
 
   TableHeap *table_heap_;
-  RowId current_row_id_;
-  Row current_row_;
+  RowId row_id_{INVALID_PAGE_ID, 0};
+  Row *row_;
   Txn *txn_;
 };
 
