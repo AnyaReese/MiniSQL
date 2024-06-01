@@ -114,10 +114,10 @@ class TableHeap {
         log_manager_(log_manager),
         lock_manager_(lock_manager) {
     auto first_page = reinterpret_cast<TablePage *>(buffer_pool_manager->NewPage(first_page_id_));
-    ASSERT(first_page != nullptr, "[ERROR] create firstPage in table heap error!");
+    ASSERT(first_page != nullptr, "[ERROR] overflow");
     first_page->Init(first_page_id_, PAGE_SIZE, log_manager, txn);
-    buffer_pool_manager->UnpinPage(first_page_id_, true);
     schema_ = schema;
+    buffer_pool_manager->UnpinPage(first_page_id_, true);
   };
 
   explicit TableHeap(BufferPoolManager *buffer_pool_manager, page_id_t first_page_id, Schema *schema,

@@ -17,15 +17,44 @@ BPlusTree::BPlusTree(index_id_t index_id, BufferPoolManager *buffer_pool_manager
       processor_(KM),
       leaf_max_size_(leaf_max_size),
       internal_max_size_(internal_max_size) {
+  //  LOG(INFO) << "BPlusTree() Constructor called leaf_max_size_ = " << leaf_max_size_ << " internal_max_size_ = " << internal_max_size_ << std::endl;
+  auto index_root_page = reinterpret_cast<IndexRootsPage *>
+      (buffer_pool_manager_->FetchPage(INDEX_ROOTS_PAGE_ID)->GetData());
+  if(!index_root_page->GetRootId(index_id, &root_page_id_)) {
+    root_page_id_ = INVALID_PAGE_ID;
+  }
+  buffer_pool_manager_->UnpinPage(INDEX_ROOTS_PAGE_ID, true);
+  buffer_pool_manager_->UnpinPage(root_page_id_, true);
 }
-
+/*
+ * If current_page_id = INVALID_PAGE_ID, then
+ * destroy from the root page, otherwise
+ * destroy from the current page
+ */
 void BPlusTree::Destroy(page_id_t current_page_id) {
+  //  LOG(INFO) << "Destroy page! " << current_page_id;
+  if(IsEmpty()) return;
+  if(current_page_id == INVALID_PAGE_ID) {
+    current_page_id = root_page_id_;
+    root_page_id_ = INVALID_PAGE_ID;
+    UpdateRootPageId(2);
+  }
+  auto page = reinterpret_cast<BPlusTreePage *>(buffer_pool_manager_->FetchPage(current_page_id)->GetData());
+  if(!page->IsLeafPage()) {
+    auto *inner = reinterpret_cast<InternalPage *>(page);
+    for(int i = page->GetSize() - 1; i >= 0; --i) {
+      Destroy(inner->ValueAt(i));
+    }
+  }
+  buffer_pool_manager_->DeletePage(page->GetPageId());
+  buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
 }
 
 /*
  * Helper function to decide whether current b+tree is empty
  */
 bool BPlusTree::IsEmpty() const {
+  if(root_page_id_ == INVALID_PAGE_ID) return true;
   return false;
 }
 
@@ -37,8 +66,22 @@ bool BPlusTree::IsEmpty() const {
  * This method is used for point query
  * @return : true means key exists
  */
-bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn *transaction) { return false; }
-
+bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn *transaction) {
+  if(IsEmpty()) return false;
+  auto *page = FindLeafPage(key, INVALID_PAGE_ID, false);
+  if(page == nullptr) {
+    //    LOG(INFO) << "GetValue() : FindLeafPage Error";
+    return false;
+  }
+  LeafPage *leaf = reinterpret_cast<LeafPage *>(page->GetData());
+  RowId val;
+  bool Find = leaf->Lookup(key, val, processor_);
+  if(Find) {
+    result.push_back(val);
+  }
+  buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+  return Find;
+}
 /*****************************************************************************
  * INSERTION
  *****************************************************************************/
@@ -49,14 +92,38 @@ bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn 
  * @return: since we only support unique key, if user try to insert duplicate
  * keys return false, otherwise return true.
  */
-bool BPlusTree::Insert(GenericKey *key, const RowId &value, Txn *transaction) { return false; }
+bool BPlusTree::Insert(GenericKey *key, const RowId &value, Txn *transaction) {
+  if(IsEmpty()) {
+    //    LOG(INFO) << "BPlusTree::Insert the first key" << std::endl;
+    StartNewTree(key, value);
+    return true;
+  } else {
+    //    LOG(INFO) << "BPlusTree::Insert() called" << std::endl;
+    return InsertIntoLeaf(key, value, transaction);
+  }
+}
 /*
  * Insert constant key & value pair into an empty tree
  * User needs to first ask for new page from buffer pool manager(NOTICE: throw
  * an "out of memory" exception if returned value is nullptr), then update b+
  * tree's root page id and insert entry directly into leaf page.
  */
-void BPlusTree::StartNewTree(GenericKey *key, const RowId &value) {}
+void BPlusTree::StartNewTree(GenericKey *key, const RowId &value) {
+  auto * page = buffer_pool_manager_->NewPage(root_page_id_);
+  if(page == nullptr) {
+    //    LOG(ERROR) << "out of memory" << std::endl;
+  }
+  auto * leaf = reinterpret_cast<LeafPage *>(page->GetData());
+  leaf_max_size_ = 4064/(processor_.GetKeySize() + sizeof(value))-1;
+  internal_max_size_ =  leaf_max_size_;
+  if(internal_max_size_ < 2) {
+    internal_max_size_ = 2, leaf_max_size_ = 2;
+  }
+  leaf->Init(root_page_id_, INVALID_PAGE_ID, processor_.GetKeySize(), leaf_max_size_);
+  leaf->Insert(key, value, processor_);
+  buffer_pool_manager_->UnpinPage(root_page_id_, true);
+  UpdateRootPageId(1);
+}
 
 /*
  * Insert constant key & value pair into leaf page
@@ -66,7 +133,25 @@ void BPlusTree::StartNewTree(GenericKey *key, const RowId &value) {}
  * @return: since we only support unique key, if user try to insert duplicate
  * keys return false, otherwise return true.
  */
-bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transaction) { return false; }
+bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transaction) {
+  RowId _value;
+  auto * page = reinterpret_cast<LeafPage *>(FindLeafPage(key, INVALID_PAGE_ID,false)->GetData());
+  if(page->Lookup(key, _value, processor_)) {
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+    return false;
+  } else {
+    page->Insert(key, value, processor_);
+    if(page->GetSize() >= page->GetMaxSize()) {
+      auto *new_page = Split(page, transaction);
+      new_page->SetNextPageId(page->GetNextPageId());
+      page->SetNextPageId(new_page->GetPageId());
+      InsertIntoParent(page, new_page->KeyAt(0), new_page, transaction);
+      buffer_pool_manager_->UnpinPage(new_page->GetPageId(), true);
+    }
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
+    return true;
+  }
+}
 
 /*
  * Split input page and return newly created page.
@@ -75,9 +160,31 @@ bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transac
  * an "out of memory" exception if returned value is nullptr), then move half
  * of key & value pairs from input page to newly created page
  */
-BPlusTreeInternalPage *BPlusTree::Split(InternalPage *node, Txn *transaction) { return nullptr; }
+BPlusTreeInternalPage *BPlusTree::Split(InternalPage *node, Txn *transaction) {
+  page_id_t new_page_id;
+  auto *page = buffer_pool_manager_->NewPage(new_page_id);
+  if(page == nullptr) {
+    //    LOG(ERROR) << "out of memory" << std::endl;
+    return nullptr;
+  }
+  BPlusTreeInternalPage *new_page = reinterpret_cast<InternalPage *>(page);
+  new_page->Init(new_page_id, node->GetParentPageId(), node->GetKeySize(), node->GetMaxSize());
+  node->MoveHalfTo(new_page, buffer_pool_manager_);
+  return new_page;
+}
 
-BPlusTreeLeafPage *BPlusTree::Split(LeafPage *node, Txn *transaction) { return nullptr; }
+BPlusTreeLeafPage *BPlusTree::Split(LeafPage *node, Txn *transaction) {
+  page_id_t new_page_id;
+  auto *page = buffer_pool_manager_->NewPage(new_page_id);
+  if(page == nullptr) {
+    //    LOG(ERROR) << "out of memory" << std::endl;
+    return nullptr;
+  }
+  BPlusTreeLeafPage *new_page = reinterpret_cast<LeafPage *>(page);
+  new_page->Init(new_page_id, node->GetParentPageId(), node->GetKeySize(),node->GetMaxSize());
+  node->MoveHalfTo(new_page);
+  return new_page;
+}
 
 /*
  * Insert key & value pair into internal page after split
@@ -88,7 +195,32 @@ BPlusTreeLeafPage *BPlusTree::Split(LeafPage *node, Txn *transaction) { return n
  * adjusted to take info of new_node into account. Remember to deal with split
  * recursively if necessary.
  */
-void BPlusTree::InsertIntoParent(BPlusTreePage *old_node, GenericKey *key, BPlusTreePage *new_node, Txn *transaction) {}
+void BPlusTree::InsertIntoParent(BPlusTreePage *old_node, GenericKey *key, BPlusTreePage *new_node,
+                                 Txn *transaction) {
+  if(old_node->IsRootPage()) {
+    auto *page = buffer_pool_manager_->NewPage(root_page_id_);
+    if(page == nullptr) {
+      //      LOG(ERROR) << "Out of memory." << std::endl;
+    }
+    auto * new_root_page = reinterpret_cast<InternalPage *>(page->GetData());
+    new_root_page->Init(root_page_id_, INVALID_PAGE_ID, processor_.GetKeySize(), internal_max_size_);
+    new_root_page->PopulateNewRoot(old_node->GetPageId(), key, new_node->GetPageId());
+    old_node->SetParentPageId(root_page_id_);
+    new_node->SetParentPageId(root_page_id_);
+    buffer_pool_manager_->UnpinPage(root_page_id_, true);
+    UpdateRootPageId(0);
+  } else {
+    auto *fa_page = reinterpret_cast<BPlusTree::InternalPage *>(
+        buffer_pool_manager_->FetchPage(old_node->GetParentPageId())->GetData());
+    fa_page->InsertNodeAfter(old_node->GetPageId(), key, new_node->GetPageId());
+    if (fa_page->GetSize() >= fa_page->GetMaxSize()) {
+      InternalPage *fa_split_page = Split(fa_page, transaction);
+      InsertIntoParent(fa_page, fa_split_page->KeyAt(0), fa_split_page, transaction);
+      buffer_pool_manager_->UnpinPage(fa_split_page->GetPageId(), true);
+    }
+    buffer_pool_manager_->UnpinPage(fa_page->GetPageId(), true);
+  }
+}
 
 /*****************************************************************************
  * REMOVE
@@ -100,7 +232,21 @@ void BPlusTree::InsertIntoParent(BPlusTreePage *old_node, GenericKey *key, BPlus
  * delete entry from leaf page. Remember to deal with redistribute or merge if
  * necessary.
  */
-void BPlusTree::Remove(const GenericKey *key, Txn *transaction) {}
+void BPlusTree::Remove(const GenericKey *key, Txn *transaction) {
+  if(IsEmpty()) return;
+  auto * leaf = reinterpret_cast<LeafPage *>
+      (FindLeafPage(key, INVALID_PAGE_ID,false)->GetData());
+  int pre_size = leaf->GetSize();
+  if(pre_size > leaf->RemoveAndDeleteRecord(key, processor_)) {
+    CoalesceOrRedistribute(leaf, transaction);
+    // DeletePage ?
+  } else {
+    //    LOG(ERROR) << "Remove() : RemoveAndDeleteRecord() failed";
+    buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+    return;
+  }
+  buffer_pool_manager_->UnpinPage(leaf->GetPageId(), true);
+}
 
 /* todo
  * User needs to first find the sibling of input page. If sibling's size + input
@@ -111,7 +257,33 @@ void BPlusTree::Remove(const GenericKey *key, Txn *transaction) {}
  */
 template <typename N>
 bool BPlusTree::CoalesceOrRedistribute(N *&node, Txn *transaction) {
-  return false;
+  //  LOG(INFO) << "CoalesceOrRedistribute() called";
+  bool _delete = false;
+  if(node->IsRootPage()) {
+    _delete = AdjustRoot(node);
+  } else if (node->GetSize() >= node->GetMinSize()){
+    return false;
+  } else {
+    page_id_t parent_id = node->GetParentPageId();
+    auto * par = reinterpret_cast<InternalPage *>(
+        buffer_pool_manager_->FetchPage(parent_id) -> GetData());
+    int index = par->ValueIndex(node->GetPageId());
+    int sib_index = index == 0 ? 1 : index - 1;
+    page_id_t sibling_id = par->ValueAt(sib_index);
+    auto * sibling = reinterpret_cast<N *>
+        (buffer_pool_manager_->FetchPage(sibling_id)->GetData());
+    if(node->GetSize() + sibling->GetSize() >= node->GetMaxSize()) {
+      Redistribute(sibling, node, index);
+      buffer_pool_manager_->UnpinPage(par->GetPageId(), true);
+      buffer_pool_manager_->UnpinPage(sibling->GetPageId(), true);
+    } else {
+      Coalesce(sibling, node, par, index);
+      buffer_pool_manager_->UnpinPage(par->GetPageId(), true);
+      buffer_pool_manager_->UnpinPage(sibling->GetPageId(), true);
+      _delete = 1;
+    }
+  }
+  return _delete;
 }
 
 /*
@@ -127,12 +299,34 @@ bool BPlusTree::CoalesceOrRedistribute(N *&node, Txn *transaction) {
  */
 bool BPlusTree::Coalesce(LeafPage *&neighbor_node, LeafPage *&node, InternalPage *&parent, int index,
                          Txn *transaction) {
-  return false;
+  int sib_index = index == 0 ? 1 : index - 1;
+  if(index < sib_index) {
+    neighbor_node->MoveAllTo(node);
+    node->SetNextPageId(neighbor_node->GetNextPageId());
+    //    buffer_pool_manager_->UnpinPage(neighbor_node->GetPageId(), true);
+    parent->Remove(sib_index);
+  } else {
+    node->MoveAllTo(neighbor_node);
+    neighbor_node->SetNextPageId(node->GetNextPageId());
+    //    buffer_pool_manager_->UnpinPage(neighbor_node->GetPageId(), true);
+    parent->Remove(index);
+  }
+  return CoalesceOrRedistribute(parent, transaction);
 }
 
 bool BPlusTree::Coalesce(InternalPage *&neighbor_node, InternalPage *&node, InternalPage *&parent, int index,
                          Txn *transaction) {
-  return false;
+  int sib_index = index == 0 ? 1 : index - 1;
+  if(index < sib_index) {
+    neighbor_node->MoveAllTo(node, parent->KeyAt(sib_index), buffer_pool_manager_);
+    //    buffer_pool_manager_->UnpinPage(neighbor_node->GetPageId(), true);
+    parent->Remove(sib_index);
+  } else {
+    node->MoveAllTo(neighbor_node, parent->KeyAt(index), buffer_pool_manager_);
+    //    buffer_pool_manager_->UnpinPage(neighbor_node->GetPageId(), true);
+    parent->Remove(index);
+  }
+  return CoalesceOrRedistribute(parent, transaction);
 }
 
 /*
@@ -145,8 +339,28 @@ bool BPlusTree::Coalesce(InternalPage *&neighbor_node, InternalPage *&node, Inte
  * @param   node               input from method coalesceOrRedistribute()
  */
 void BPlusTree::Redistribute(LeafPage *neighbor_node, LeafPage *node, int index) {
+  auto * parent = reinterpret_cast<InternalPage *>
+      (buffer_pool_manager_->FetchPage(node->GetParentPageId())->GetData());
+  if(index == 0) {
+    neighbor_node->MoveFirstToEndOf(node);
+    parent->SetKeyAt(1, neighbor_node->KeyAt(0));
+  } else {
+    neighbor_node->MoveLastToFrontOf(node);
+    parent->SetKeyAt(index, node->KeyAt(0));
+  }
+  buffer_pool_manager_->UnpinPage(parent->GetPageId(), true);
 }
 void BPlusTree::Redistribute(InternalPage *neighbor_node, InternalPage *node, int index) {
+  auto * parent = reinterpret_cast<BPlusTree::InternalPage *>
+      (buffer_pool_manager_->FetchPage(node->GetParentPageId())->GetData());
+  if(index == 0) {
+    neighbor_node->MoveFirstToEndOf(node, parent->KeyAt(1), buffer_pool_manager_);
+    parent->SetKeyAt(1, neighbor_node->KeyAt(0));
+  } else {
+    neighbor_node->MoveLastToFrontOf(node,parent->KeyAt(index), buffer_pool_manager_);
+    parent->SetKeyAt(index, node->KeyAt(0));
+  }
+  buffer_pool_manager_->UnpinPage(parent->GetPageId(), true);
 }
 /*
  * Update root page if necessary
@@ -159,6 +373,21 @@ void BPlusTree::Redistribute(InternalPage *neighbor_node, InternalPage *node, in
  * happened
  */
 bool BPlusTree::AdjustRoot(BPlusTreePage *old_root_node) {
+  //  LOG(INFO) << "AdjustRoot() called";
+  if(old_root_node->IsLeafPage() && old_root_node->GetSize() == 0) {
+    root_page_id_ = INVALID_PAGE_ID;
+    UpdateRootPageId(0);
+    return true;
+  } else if (!old_root_node->IsLeafPage() && old_root_node->GetSize() == 1) {
+    auto root = reinterpret_cast<BPlusTree::InternalPage *>(old_root_node);
+    auto * only_child = reinterpret_cast<BPlusTreePage *>
+        (buffer_pool_manager_->FetchPage(root->ValueAt(0))->GetData());
+    only_child->SetParentPageId(INVALID_PAGE_ID);
+    root_page_id_ = only_child->GetPageId();
+    UpdateRootPageId(0);
+    buffer_pool_manager_->UnpinPage(only_child->GetPageId(), true);
+    return true;
+  }
   return false;
 }
 
@@ -171,16 +400,23 @@ bool BPlusTree::AdjustRoot(BPlusTreePage *old_root_node) {
  * @return : index iterator
  */
 IndexIterator BPlusTree::Begin() {
-  return IndexIterator();
+  auto * page = reinterpret_cast<LeafPage *>(FindLeafPage(nullptr, INVALID_PAGE_ID, true)->GetData());
+  page_id_t page_id = page->GetPageId();
+  buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+  return IndexIterator(page_id, buffer_pool_manager_, 0);
 }
 
 /*
- * Input parameter is low key, find the leaf page that contains the input key
+ * Input parameter is low-key, find the leaf page that contains the input key
  * first, then construct index iterator
  * @return : index iterator
  */
 IndexIterator BPlusTree::Begin(const GenericKey *key) {
-   return IndexIterator();
+  auto * page = reinterpret_cast<LeafPage *>(FindLeafPage(key, INVALID_PAGE_ID, false)->GetData());
+  int index = page->KeyIndex(key, processor_);
+  page_id_t page_id = page->GetPageId();
+  buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+  return IndexIterator(page_id, buffer_pool_manager_, index);
 }
 
 /*
@@ -189,6 +425,20 @@ IndexIterator BPlusTree::Begin(const GenericKey *key) {
  * @return : index iterator
  */
 IndexIterator BPlusTree::End() {
+  //   auto * page = reinterpret_cast<BPlusTreePage *>
+  //       (buffer_pool_manager_->FetchPage(root_page_id_)->GetData());
+  //   while(!page->IsLeafPage()) {
+  //     auto inner = reinterpret_cast<InternalPage *>(page);
+  //      page_id_t child_id = inner->ValueAt(inner->GetSize()-1);
+  //      auto child_page = reinterpret_cast<BPlusTreePage *>
+  //          (buffer_pool_manager_->FetchPage(child_id)->GetData());
+  //      buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+  //      page = child_page;
+  //   }
+  //   int page_id = page->GetPageId(), index = page->GetSize()-1;
+  //   buffer_pool_manager_->UnpinPage(page_id, false);
+  //   return IndexIterator(page_id, buffer_pool_manager_, index);
+  // End() = default;
   return IndexIterator();
 }
 
@@ -201,7 +451,18 @@ IndexIterator BPlusTree::End() {
  * Note: the leaf page is pinned, you need to unpin it after use.
  */
 Page *BPlusTree::FindLeafPage(const GenericKey *key, page_id_t page_id, bool leftMost) {
-  return nullptr;
+  if(page_id == INVALID_PAGE_ID) page_id = root_page_id_;
+  auto * page = reinterpret_cast<BPlusTreePage *>
+      (buffer_pool_manager_->FetchPage(page_id)->GetData());
+  while(!page->IsLeafPage()) {
+    auto inner = reinterpret_cast<InternalPage *>(page);
+    page_id_t child_id = leftMost ? inner->ValueAt(0) : inner->Lookup(key, processor_);
+    auto child_page = reinterpret_cast<BPlusTreePage *>
+        (buffer_pool_manager_->FetchPage(child_id)->GetData());
+    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+    page = child_page;
+  }
+  return reinterpret_cast<Page *>(page);
 }
 
 /*
@@ -213,6 +474,15 @@ Page *BPlusTree::FindLeafPage(const GenericKey *key, page_id_t page_id, bool lef
  * updating it.
  */
 void BPlusTree::UpdateRootPageId(int insert_record) {
+  auto * root = reinterpret_cast<IndexRootsPage *>(buffer_pool_manager_->FetchPage(INDEX_ROOTS_PAGE_ID)->GetData());
+  if(insert_record == 1) {
+    ASSERT(root->Insert(index_id_, root_page_id_), "BPlusTree::UpdateRootPageId() inserted failed");
+  } else if(insert_record == 0){
+    ASSERT(root->Update(index_id_, root_page_id_), "BPlusTree::UpdateRootPageId() updated failed");
+  } else {
+    ASSERT(root->Delete(index_id_), "BPlusTree::UpdateRootPageId() deleted failed");
+  }
+  buffer_pool_manager_->UnpinPage(INDEX_ROOTS_PAGE_ID, true);
 }
 
 /**

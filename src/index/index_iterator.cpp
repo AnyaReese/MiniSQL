@@ -16,11 +16,25 @@ IndexIterator::~IndexIterator() {
 }
 
 std::pair<GenericKey *, RowId> IndexIterator::operator*() {
-  ASSERT(false, "Not implemented yet.");
+  return page->GetItem(item_index);
 }
 
 IndexIterator &IndexIterator::operator++() {
-  ASSERT(false, "Not implemented yet.");
+  if(++item_index == page->GetSize() && page->GetNextPageId() != INVALID_PAGE_ID) {
+    auto * next_page = reinterpret_cast<::LeafPage *>
+        (buffer_pool_manager->FetchPage(page->GetNextPageId())->GetData());
+    current_page_id = page->GetNextPageId();
+    buffer_pool_manager->UnpinPage(page->GetPageId(), false);
+    page = next_page;
+    item_index = 0;
+  } if(item_index == page->GetSize()) {
+    buffer_pool_manager->UnpinPage(current_page_id, false);
+    current_page_id = INVALID_PAGE_ID;
+    page = nullptr;
+    item_index = 0;
+    *this = IndexIterator();
+  }
+  return *this;
 }
 
 bool IndexIterator::operator==(const IndexIterator &itr) const {
