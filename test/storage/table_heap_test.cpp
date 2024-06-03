@@ -14,6 +14,7 @@ using Fields = std::vector<Field>;
 
 TEST(TableHeapTest, TableHeapSampleTest) {
   // init testing instance
+  remove(db_file_name.c_str());
   auto disk_mgr_ = new DiskManager(db_file_name);
   auto bpm_ = new BufferPoolManager(DEFAULT_BUFFER_POOL_SIZE, disk_mgr_);
   const int row_nums = 10000;
@@ -26,7 +27,7 @@ TEST(TableHeapTest, TableHeapSampleTest) {
   std::unordered_map<int64_t, Fields *> row_values;
   uint32_t size = 0;
   
-    LOG(WARNING) << "test01" << std::endl;
+  LOG(WARNING) << "test01" << std::endl;
   TableHeap *table_heap = TableHeap::Create(bpm_, schema.get(), nullptr, nullptr, nullptr);
   for (int i = 0; i < row_nums; i++) {
     int32_t len = RandomUtils::RandomInt(0, 64);

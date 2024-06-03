@@ -41,6 +41,7 @@ TEST(DiskManagerTest, BitMapPageTest) {
 
 TEST(DiskManagerTest, FreePageAllocationTest) {
   std::string db_name = "disk_test.db";
+  remove(db_name.c_str());
   DiskManager *disk_mgr = new DiskManager(db_name);
   int extent_nums = 2;
   // LOG(WARNING) << "test00" << std::endl;
@@ -65,6 +66,5 @@ TEST(DiskManagerTest, FreePageAllocationTest) {
   EXPECT_EQ(extent_nums * DiskManager::BITMAP_SIZE - 5, meta_page->GetAllocatedPages());
   EXPECT_EQ(DiskManager::BITMAP_SIZE - 2, meta_page->GetExtentUsedPage(0));
   EXPECT_EQ(DiskManager::BITMAP_SIZE - 3, meta_page->GetExtentUsedPage(1));
-  remove(db_name.c_str());
   LOG(WARNING) << "TEST(DiskManagerTest, FreePageAllocationTest) success!" << std::endl;
 }
