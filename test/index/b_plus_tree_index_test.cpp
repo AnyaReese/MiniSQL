@@ -1,7 +1,7 @@
 #include "index/b_plus_tree_index.h"
 
 #include <string>
-
+#include "glog/logging.h"
 #include "common/instance.h"
 #include "gtest/gtest.h"
 #include "index/generic_key.h"
@@ -30,6 +30,7 @@ TEST(BPlusTreeTests, BPlusTreeIndexGenericKeyTest) {
 TEST(BPlusTreeTests, BPlusTreeIndexSimpleTest) {
   auto disk_mgr_ = new DiskManager(db_name);
   auto bpm_ = new BufferPoolManager(DEFAULT_BUFFER_POOL_SIZE, disk_mgr_);
+  LOG(WARNING) << "BPlusTreeIndexSimpleTest" << std::endl;
   page_id_t id;
   if (bpm_->IsPageFree(CATALOG_META_PAGE_ID)) {
     if (bpm_->NewPage(id) == nullptr || id != CATALOG_META_PAGE_ID) {

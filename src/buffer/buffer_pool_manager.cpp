@@ -26,6 +26,12 @@ BufferPoolManager::~BufferPoolManager() {
 /**
  * TODO: Student Implement
  */
+/**
+ * Fetches a page from the buffer pool.
+ * 
+ * @param page_id The ID of the page to fetch.
+ * @return A pointer to the fetched page, or nullptr if the page does not exist or all pages in the buffer pool are pinned.
+ */
 Page *BufferPoolManager::FetchPage(page_id_t page_id) {
   unique_lock<recursive_mutex> lock(latch_);
   if(page_id == INVALID_PAGE_ID)

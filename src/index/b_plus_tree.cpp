@@ -65,12 +65,16 @@ bool BPlusTree::IsEmpty() const {
  * Return the only value that associated with input key
  * This method is used for point query
  * @return : true means key exists
+ * 
+ * 1. 如果树为空，那么返回 false
+ * 2. 调用 FindLeafPage() 找到叶子节点
+ * 3. 在叶子节点中查找 key
+ * 4. 返回结果
  */
 bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn *transaction) {
   if(IsEmpty()) return false;
   auto *page = FindLeafPage(key, INVALID_PAGE_ID, false);
   if(page == nullptr) {
-    //    LOG(INFO) << "GetValue() : FindLeafPage Error";
     return false;
   }
   LeafPage *leaf = reinterpret_cast<LeafPage *>(page->GetData());
@@ -91,14 +95,13 @@ bool BPlusTree::GetValue(const GenericKey *key, std::vector<RowId> &result, Txn 
  * entry, otherwise insert into leaf page.
  * @return: since we only support unique key, if user try to insert duplicate
  * keys return false, otherwise return true.
+ * 
  */
 bool BPlusTree::Insert(GenericKey *key, const RowId &value, Txn *transaction) {
   if(IsEmpty()) {
-    //    LOG(INFO) << "BPlusTree::Insert the first key" << std::endl;
     StartNewTree(key, value);
     return true;
   } else {
-    //    LOG(INFO) << "BPlusTree::Insert() called" << std::endl;
     return InsertIntoLeaf(key, value, transaction);
   }
 }
@@ -107,15 +110,21 @@ bool BPlusTree::Insert(GenericKey *key, const RowId &value, Txn *transaction) {
  * User needs to first ask for new page from buffer pool manager(NOTICE: throw
  * an "out of memory" exception if returned value is nullptr), then update b+
  * tree's root page id and insert entry directly into leaf page.
+ * 
+ * 1. 申请一个新的 page
+ * 2. 初始化叶子节点
+ * 3. 将 key 插入到叶子节点中
+ * 4. 更新根节点的 page_id
+ * 5. 返回
  */
 void BPlusTree::StartNewTree(GenericKey *key, const RowId &value) {
   auto * page = buffer_pool_manager_->NewPage(root_page_id_);
   if(page == nullptr) {
-    //    LOG(ERROR) << "out of memory" << std::endl;
+       LOG(ERROR) << "out of memory" << std::endl;
   }
   auto * leaf = reinterpret_cast<LeafPage *>(page->GetData());
-  leaf_max_size_ = 4064/(processor_.GetKeySize() + sizeof(value))-1;
   internal_max_size_ =  leaf_max_size_;
+  leaf_max_size_ = 4064/(processor_.GetKeySize() + sizeof(value))-1;
   if(internal_max_size_ < 2) {
     internal_max_size_ = 2, leaf_max_size_ = 2;
   }
@@ -132,23 +141,32 @@ void BPlusTree::StartNewTree(GenericKey *key, const RowId &value) {
  * immediately, otherwise insert entry. Remember to deal with split if necessary.
  * @return: since we only support unique key, if user try to insert duplicate
  * keys return false, otherwise return true.
+ * 
+ * 1. 调用 FindLeafPage() 找到叶节点，并在叶节点中查找 key
+ * 2. 如果 key 已经存在，那么返回 false
+ * 3. 如果 key 不存在，那么插入 key
+ * 4. 如果叶子节点的 size 超过了 max_size
+ *  4.1 将叶子节点分裂
+ *  4.2 更新链表并将新的叶子节点插入到父节点中
+ * 5. 返回 true
  */
 bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transaction) {
   RowId _value;
-  auto * page = reinterpret_cast<LeafPage *>(FindLeafPage(key, INVALID_PAGE_ID,false)->GetData());
-  if(page->Lookup(key, _value, processor_)) {
-    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
-    return false;
+  LeafPage * leaf_page = reinterpret_cast<LeafPage *>(FindLeafPage(key, INVALID_PAGE_ID,false)->GetData());
+
+  if(leaf_page->Lookup(key, _value, processor_)) {
+    buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(), false);
+    return false; //if user try to insert duplicate keys return false, otherwise return true.
   } else {
-    page->Insert(key, value, processor_);
-    if(page->GetSize() >= page->GetMaxSize()) {
-      auto *new_page = Split(page, transaction);
-      new_page->SetNextPageId(page->GetNextPageId());
-      page->SetNextPageId(new_page->GetPageId());
-      InsertIntoParent(page, new_page->KeyAt(0), new_page, transaction);
+    leaf_page->Insert(key, value, processor_);
+    if(leaf_page->GetSize() >= leaf_page->GetMaxSize()) {
+      auto *new_page = Split(leaf_page, transaction);
+      leaf_page->SetNextPageId(new_page->GetPageId());
+      new_page->SetNextPageId(leaf_page->GetNextPageId());
+      InsertIntoParent(leaf_page, new_page->KeyAt(0), new_page, transaction);
       buffer_pool_manager_->UnpinPage(new_page->GetPageId(), true);
     }
-    buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
+    buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(), true);
     return true;
   }
 }
@@ -159,15 +177,18 @@ bool BPlusTree::InsertIntoLeaf(GenericKey *key, const RowId &value, Txn *transac
  * User needs to first ask for new page from buffer pool manager(NOTICE: throw
  * an "out of memory" exception if returned value is nullptr), then move half
  * of key & value pairs from input page to newly created page
+ * 
+ * 1. 申请一个新的page
+ * 2. 将原来页面的一半数据移动到新的 page 中
+ * 3. 返回新的page
  */
 BPlusTreeInternalPage *BPlusTree::Split(InternalPage *node, Txn *transaction) {
   page_id_t new_page_id;
   auto *page = buffer_pool_manager_->NewPage(new_page_id);
   if(page == nullptr) {
-    //    LOG(ERROR) << "out of memory" << std::endl;
-    return nullptr;
+       LOG(ERROR) << "BPlusTree::Split  Out of memory" << std::endl;
   }
-  BPlusTreeInternalPage *new_page = reinterpret_cast<InternalPage *>(page);
+  BPlusTreeInternalPage *new_page = reinterpret_cast<BPlusTreeInternalPage *>(page);
   new_page->Init(new_page_id, node->GetParentPageId(), node->GetKeySize(), node->GetMaxSize());
   node->MoveHalfTo(new_page, buffer_pool_manager_);
   return new_page;
@@ -176,11 +197,8 @@ BPlusTreeInternalPage *BPlusTree::Split(InternalPage *node, Txn *transaction) {
 BPlusTreeLeafPage *BPlusTree::Split(LeafPage *node, Txn *transaction) {
   page_id_t new_page_id;
   auto *page = buffer_pool_manager_->NewPage(new_page_id);
-  if(page == nullptr) {
-    //    LOG(ERROR) << "out of memory" << std::endl;
-    return nullptr;
-  }
-  BPlusTreeLeafPage *new_page = reinterpret_cast<LeafPage *>(page);
+
+  BPlusTreeLeafPage *new_page = reinterpret_cast<BPlusTreeLeafPage *>(page);
   new_page->Init(new_page_id, node->GetParentPageId(), node->GetKeySize(),node->GetMaxSize());
   node->MoveHalfTo(new_page);
   return new_page;
@@ -194,13 +212,17 @@ BPlusTreeLeafPage *BPlusTree::Split(LeafPage *node, Txn *transaction) {
  * User needs to first find the parent page of old_node, parent node must be
  * adjusted to take info of new_node into account. Remember to deal with split
  * recursively if necessary.
+ * 
+ * 1. 如果 old_node 是根节点，那么新建一个根节点，将 old_node 和 new_node 插入到新的根节点中
+ * 2. 如果 old_node 不是根节点，那么找到 old_node 的父节点，将 old_node 和 new_node 插入到父节点中
+ * 3. 如果父节点的 size 超过了 max_size，那么将父节点分裂，然后递归调用 InsertIntoParent()
  */
 void BPlusTree::InsertIntoParent(BPlusTreePage *old_node, GenericKey *key, BPlusTreePage *new_node,
                                  Txn *transaction) {
   if(old_node->IsRootPage()) {
     auto *page = buffer_pool_manager_->NewPage(root_page_id_);
     if(page == nullptr) {
-      //      LOG(ERROR) << "Out of memory." << std::endl;
+      LOG(ERROR) << "BPlusTree::InsertIntoParen:Out of memory." << std::endl;
     }
     auto * new_root_page = reinterpret_cast<InternalPage *>(page->GetData());
     new_root_page->Init(root_page_id_, INVALID_PAGE_ID, processor_.GetKeySize(), internal_max_size_);

@@ -20,10 +20,10 @@
  */
 void InternalPage::Init(page_id_t page_id, page_id_t parent_id, int key_size, int max_size) {
     SetPageType(IndexPageType::INTERNAL_PAGE);
-    SetParentPageId(parent_id);
-    SetKeySize(key_size);
     SetSize(0);
+    SetKeySize(key_size);
     SetPageId(page_id);
+    SetParentPageId(parent_id);
     SetMaxSize(max_size);
 }
 /*
@@ -68,25 +68,24 @@ void InternalPage::PairCopy(void *dest, void *src, int pair_num) {
  * Find and return the child pointer(page_id) which points to the child page
  * that contains input "key"
  * Start the search from the second key(the first key should always be invalid)
- * 用了二分查找
+ * 查找一个中间节点中 key 对应的子节点
+ * 使用二分查找
  */
 page_id_t InternalPage::Lookup(const GenericKey *key, const KeyManager &KM) {
-  // index from 0 to GetSize()-1
-  int index = 0, l = 1, r = GetSize() - 1;
-  // binary search
-  while(l <= r) {
-    int mid = (l + r) >> 1;
-    int Compare_result = KM.CompareKeys(key, KeyAt(mid));
-    if(Compare_result == 0) {
+  int index = 0,  right = GetSize() - 1, left = 1; // Start the search from the second key
+  while(left <= right) {
+    int mid = (left + right) >> 1;
+    int cp = KM.CompareKeys(key, KeyAt(mid));
+    if(cp == 0) {
       index = mid;
       break;
-    }  else if(Compare_result < 0) { // key < mid->key
-      r = mid - 1;
-    } else {
-      index = mid;
-      l = mid + 1;
+    }  else if(cp < 0) {
+      right = mid - 1;
+    } else if(cp > 0){
+      left = mid + 1;
     }
   }
+  if(left > right) index = right;
   return ValueAt(index);
 }
 
@@ -98,6 +97,15 @@ page_id_t InternalPage::Lookup(const GenericKey *key, const KeyManager &KM) {
  * When the insertion cause overflow from leaf page all the way upto the root
  * page, you should create a new root page and populate its elements.
  * NOTE: This method is only called within InsertIntoParent()(b_plus_tree.cpp)
+ * @param: old_value: the page id of old root page
+ * @param: new_key: the key to be inserted
+ * @param: new_value: the page id of new root page
+ * @return:  new size after insertion
+ * 
+ * 1. 将原来的根节点的 page_id 放在第一个位置
+ * 2. 将新的 key 放在第二个位置
+ * 3. 将新的 page_id 放在第三个位置
+ * 4. 设置新的 size 为 2
  */
 void InternalPage::PopulateNewRoot(const page_id_t &old_value, GenericKey *new_key, const page_id_t &new_value) {
   SetValueAt(0, old_value);
@@ -112,8 +120,7 @@ void InternalPage::PopulateNewRoot(const page_id_t &old_value, GenericKey *new_k
  * @return:  new size after insertion
  */
 int InternalPage::InsertNodeAfter(const page_id_t &old_value, GenericKey *new_key, const page_id_t &new_value) {
-  int pos = ValueIndex(old_value) + 1; // Find the position of the node to be inserted
-                                        //  LOG(INFO) << "InsertNodeAfter " << old_value << " " << new_value << std::endl;
+  int pos = ValueIndex(old_value) + 1;
   PairCopy(PairPtrAt(pos + 1), PairPtrAt(pos), GetSize() - pos);
   SetKeyAt(pos, new_key);
   SetValueAt(pos, new_value);

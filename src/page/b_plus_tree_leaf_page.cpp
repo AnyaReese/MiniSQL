@@ -41,12 +41,12 @@ page_id_t LeafPage::GetNextPageId() const {
 void LeafPage::SetNextPageId(page_id_t next_page_id) {
   next_page_id_ = next_page_id;
   if (next_page_id == 0) {
-    LOG(INFO) << "Fatal error";
+    LOG(WARNING) << "next_page_id == 0";
   }
 }
 
 /**
- * TODO: Student Implement
+ * Done
  */
 /**
  * Helper method to find the first index i so that pairs_[i].first >= key
@@ -58,17 +58,16 @@ int LeafPage::KeyIndex(const GenericKey *key, const KeyManager &KM) {
     return 0;
   }
   int l = 0, r = GetSize() - 1, index = GetSize();
-  // binary search
   while(l <= r) {
-    int mid = (l + r) >> 1;
-    int Compare_result = KM.CompareKeys(key, KeyAt(mid));
-    if(Compare_result == 0) {
+    int mid = (l + r) / 2;
+    int cp = KM.CompareKeys(key, KeyAt(mid));
+    if(cp == 0) {
       index = mid;
       break;
-    }  else if(Compare_result < 0) {
-      index = mid;
+    } else if(cp < 0) {
       r = mid - 1;
-    } else {
+    }
+    else {
       l = mid + 1;
     }
   }
@@ -153,14 +152,12 @@ void LeafPage::CopyNFrom(void *src, int size) {
  * If the key does not exist, then return false
  */
 bool LeafPage::Lookup(const GenericKey *key, RowId &value, const KeyManager &KM) {
-  //  LOG(INFO) << "LeafPage::Lookup() called" << std::endl;
   int index = KeyIndex(key, KM);
-  //  LOG(INFO) << "KeyIndex() called in Lookup() : " << "index = " << index << ", GetSize() = " << GetSize() << std::endl;
   if(index < GetSize() && KM.CompareKeys(key, KeyAt(index)) == 0) {
     value = ValueAt(index);
     return true;
   }
-  return false;
+  else return false;
 }
 
 /*****************************************************************************
