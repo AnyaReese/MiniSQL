@@ -13,7 +13,7 @@
  *****************************************************************************/
 
 /**
- * TODO: Student Implement
+ * Done
  */
 /**
  * Init method after creating a new leaf page
@@ -41,7 +41,7 @@ page_id_t LeafPage::GetNextPageId() const {
 void LeafPage::SetNextPageId(page_id_t next_page_id) {
   next_page_id_ = next_page_id;
   if (next_page_id == 0) {
-    LOG(WARNING) << "next_page_id == 0";
+    LOG(WARNING) << "next_page_id is 0";
   }
 }
 
@@ -169,15 +169,20 @@ bool LeafPage::Lookup(const GenericKey *key, RowId &value, const KeyManager &KM)
  * existed, perform deletion, otherwise return immediately.
  * NOTE: store key&value pair continuously after deletion
  * @return  page size after deletion
+ * 1. 找到key的位置
+ * 2. 如果key存在，将后面的元素向前移动
+ * 3. 返回删除后的size
  */
 int LeafPage::RemoveAndDeleteRecord(const GenericKey *key, const KeyManager &KM) {
   int index = KeyIndex(key, KM);
-  if(index < GetSize() && KM.CompareKeys(key, KeyAt(index)) == 0) {
-    PairCopy(PairPtrAt(index), PairPtrAt(index + 1), GetSize() - index - 1);
-    IncreaseSize(-1);
-    return GetSize();
+  if(index > GetSize() || index < 0) {
+    ASSERT(false, "[ERROR] KeyIndex overflow");
   }
-  //  LOG(ERROR) << "fail to find the key in RemoveAndDeleteRecord." << std::endl;
+  if(KM.CompareKeys(key, KeyAt(index)) == 0) {
+    PairCopy(PairPtrAt(index), PairPtrAt(index + 1), GetSize() - 1 - index); // 将后面的元素向前移动
+    IncreaseSize(-1);
+  }
+  else LOG(WARNING)<<"Key not found";
   return GetSize();
 }
 
@@ -187,6 +192,9 @@ int LeafPage::RemoveAndDeleteRecord(const GenericKey *key, const KeyManager &KM)
 /*
  * Remove all key & value pairs from this page to "recipient" page. Don't forget
  * to update the next_page id in the sibling page
+ *
+ * 1. 将所有元素复制到recipient
+ * 2. 将自己的size设置为0
  */
 void LeafPage::MoveAllTo(LeafPage *recipient) {
   recipient->CopyNFrom(PairPtrAt(0), GetSize());
@@ -202,7 +210,7 @@ void LeafPage::MoveAllTo(LeafPage *recipient) {
  */
 void LeafPage::MoveFirstToEndOf(LeafPage *recipient) {
   if(GetSize() <= 0) {
-    //    LOG(ERROR) << "No pair to be remove" << std::endl;
+    LOG(ERROR) << "No more key-value pair to move";
     return;
   }
   recipient->CopyLastFrom(KeyAt(0), ValueAt(0));

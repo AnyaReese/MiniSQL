@@ -47,7 +47,7 @@ void BPlusTreePage::SetSize(int size) {
 
 void BPlusTreePage::IncreaseSize(int amount) {
   size_ += amount;
-  if(size_ < 0) ASSERT(false,"size_ < 0");
+  ASSERT(size_ >= 0,"size_ < 0");
 }
 
 /*
