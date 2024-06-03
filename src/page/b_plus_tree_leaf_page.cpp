@@ -65,6 +65,7 @@ int LeafPage::KeyIndex(const GenericKey *key, const KeyManager &KM) {
       index = mid;
       break;
     } else if(cp < 0) {
+      index = mid;
       r = mid - 1;
     }
     else {

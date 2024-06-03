@@ -5,23 +5,21 @@
  * Page type enum class is defined in b_plus_tree_page.h
  */
 /**
- * TODO: Student Implement
+ * DONE
  */
 bool BPlusTreePage::IsLeafPage() const {
-  if(page_type_ == IndexPageType::LEAF_PAGE) return true;
-  else return false;
+  return (page_type_ == IndexPageType::LEAF_PAGE);
 }
 
 /**
- * TODO: Student Implement
+ * DONE
  */
 bool BPlusTreePage::IsRootPage() const {
-  if(parent_page_id_ == INVALID_PAGE_ID) return true;
-  return false;
+  return(parent_page_id_ == INVALID_PAGE_ID);
 }
 
 /**
- * TODO: Student Implement
+ * DONE
  */
 void BPlusTreePage::SetPageType(IndexPageType page_type) {
   page_type_ = page_type;
@@ -49,6 +47,7 @@ void BPlusTreePage::SetSize(int size) {
 
 void BPlusTreePage::IncreaseSize(int amount) {
   size_ += amount;
+  if(size_ < 0) ASSERT(false,"size_ < 0");
 }
 
 /*

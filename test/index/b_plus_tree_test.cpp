@@ -11,6 +11,7 @@ static const std::string db_name = "bp_tree_insert_test.db";
 TEST(BPlusTreeTests, SampleTest) {
   // Init engine
   DBStorageEngine engine(db_name);
+  LOG(WARNING) << "checkpoint00" << std::endl;
   std::vector<Column *> columns = {
       new Column("int", TypeId::kTypeInt, 0, false, false),
   };
@@ -24,6 +25,7 @@ TEST(BPlusTreeTests, SampleTest) {
   vector<RowId> values;
   vector<GenericKey *> delete_seq;
   map<GenericKey *, RowId> kv_map;
+  LOG(WARNING) << "checkpoint01" << std::endl;
   for (int i = 0; i < n; i++) {
     GenericKey *key = KP.InitKey();
     std::vector<Field> fields{Field(TypeId::kTypeInt, i)};
@@ -32,6 +34,7 @@ TEST(BPlusTreeTests, SampleTest) {
     values.push_back(RowId(i));
     delete_seq.push_back(key);
   }
+  LOG(WARNING) << "checkpoint02" << std::endl;
   vector<GenericKey *> keys_copy(keys);
   // Shuffle data
   ShuffleArray(keys);

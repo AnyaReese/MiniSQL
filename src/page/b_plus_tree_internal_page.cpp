@@ -81,7 +81,7 @@ page_id_t InternalPage::Lookup(const GenericKey *key, const KeyManager &KM) {
       break;
     }  else if(cp < 0) {
       right = mid - 1;
-    } else if(cp > 0){
+    } else{
       left = mid + 1;
     }
   }
@@ -118,13 +118,21 @@ void InternalPage::PopulateNewRoot(const page_id_t &old_value, GenericKey *new_k
  * Insert new_key & new_value pair right after the pair with its value ==
  * old_value
  * @return:  new size after insertion
+ * 
+ * 1. 找到 old_value 的位置
+ * 2. 将 old_value 后面的所有 key 和 value 向后移动一位
+ * 3. 将新的 key 放在 old_value 的后面
+ * 4. 将新的 value 放在 old_value 的后面
+ * 5. size + 1
+ * 6. 返回新的 size
+ * 
  */
 int InternalPage::InsertNodeAfter(const page_id_t &old_value, GenericKey *new_key, const page_id_t &new_value) {
-  int pos = ValueIndex(old_value) + 1;
-  PairCopy(PairPtrAt(pos + 1), PairPtrAt(pos), GetSize() - pos);
-  SetKeyAt(pos, new_key);
-  SetValueAt(pos, new_value);
-  IncreaseSize(1);
+  int idx = ValueIndex(old_value) + 1;
+  PairCopy(PairPtrAt(idx + 1), PairPtrAt(idx), GetSize() - idx);
+  SetKeyAt(idx, new_key);
+  SetValueAt(idx, new_value);
+  IncreaseSize( 1 );
   return GetSize();
 }
 
@@ -134,27 +142,35 @@ int InternalPage::InsertNodeAfter(const page_id_t &old_value, GenericKey *new_ke
 /*
  * Remove half of key & value pairs from this page to "recipient" page
  * buffer_pool_manager 是干嘛的？传给CopyNFrom()用于Fetch数据页
+ * 
+ * 1. 计算需要移动的数量
+ * 2. 将需要移动的 key 和 value 移动到 recipient 中
+ * 3. size 减半
+ * 
  */
 void InternalPage::MoveHalfTo(InternalPage *recipient, BufferPoolManager *buffer_pool_manager) {
-  ASSERT(recipient != nullptr, "No recipient available");
-  int half_size = GetSize() / 2;
-  recipient->CopyNFrom(PairPtrAt(GetSize() - half_size), half_size, buffer_pool_manager);
-  IncreaseSize(-half_size);
+  ASSERT(recipient != nullptr, "recipient should not be nullptr");
+  int size_half = GetSize() / 2;
+  recipient->CopyNFrom(PairPtrAt(GetSize() - size_half), size_half, buffer_pool_manager);
+  IncreaseSize(-size_half);
+  return;
 }
 
 /* Copy entries into me, starting from {items} and copy {size} entries.
  * Since it is an internal page, for all entries (pages) moved, their parents page now changes to me.
  * So I need to 'adopt' them by changing their parent page id, which needs to be persisted with BufferPoolManger
  *
+ * 1. 将 src 中的数据复制到自己的末尾
+ * 2. size + size
+ * 3. 将所有移动的 page 的 parent page id 设置为自己的 page id
+ * 4. 返回新的 size
  */
 void InternalPage::CopyNFrom(void *src, int size, BufferPoolManager *buffer_pool_manager) {
   PairCopy(PairPtrAt(GetSize()), src, size);
   IncreaseSize(size);
   for(int i = 1; i <= size; ++i) {
     int page_id = ValueAt(GetSize() - i);
-    auto *child_page =
-        reinterpret_cast<BPlusTreePage *>
-        (buffer_pool_manager->FetchPage(page_id)->GetData());
+    BPlusTreePage *child_page = reinterpret_cast<BPlusTreePage *> (buffer_pool_manager->FetchPage(page_id)->GetData());
     child_page->SetParentPageId(GetPageId());
     buffer_pool_manager->UnpinPage(page_id, true);
   }
@@ -188,7 +204,7 @@ page_id_t InternalPage::RemoveAndReturnOnlyChild() {
  * MERGE
  *****************************************************************************/
 /*
- * Remove all of key & value pairs from this page to "recipient" page.
+ * Remove all key & value pairs from this page to "recipient" page.
  * The middle_key is the separation key you should get from the parent. You need
  * to make sure the middle key is added to the recipient to maintain the invariant.
  * You also need to use BufferPoolManager to persist changes to the parent page id for those

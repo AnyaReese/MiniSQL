@@ -32,6 +32,7 @@ TEST(BPlusTreeTests, BPlusTreeIndexSimpleTest) {
   auto bpm_ = new BufferPoolManager(DEFAULT_BUFFER_POOL_SIZE, disk_mgr_);
   page_id_t id;
   if (bpm_->IsPageFree(CATALOG_META_PAGE_ID)) {
+    LOG(WARNING)<<"CATALOG_META_PAGE is free.";
     if (bpm_->NewPage(id) == nullptr || id != CATALOG_META_PAGE_ID) {
       throw logic_error("Failed to allocate catalog meta page.");
     }
@@ -41,6 +42,7 @@ TEST(BPlusTreeTests, BPlusTreeIndexSimpleTest) {
       throw logic_error("Failed to allocate header page.");
     }
   }
+  LOG(WARNING)<<"checkpoint01";
   std::vector<Column *> columns = {new Column("id", TypeId::kTypeInt, 0, false, false),
                                    new Column("name", TypeId::kTypeChar, 64, 1, true, false),
                                    new Column("account", TypeId::kTypeFloat, 2, true, false)};
@@ -48,6 +50,7 @@ TEST(BPlusTreeTests, BPlusTreeIndexSimpleTest) {
   const TableSchema table_schema(columns);
   auto *index_schema = Schema::ShallowCopySchema(&table_schema, index_key_map);
   auto *index = new BPlusTreeIndex(0, index_schema, 256, bpm_);
+  LOG(WARNING)<<"checkpoint02";
   for (int i = 0; i < 10; i++) {
     std::vector<Field> fields{Field(TypeId::kTypeInt, i),
                               Field(TypeId::kTypeChar, const_cast<char *>("minisql"), 7, true)};
@@ -55,6 +58,7 @@ TEST(BPlusTreeTests, BPlusTreeIndexSimpleTest) {
     RowId rid(1000, i);
     ASSERT_EQ(DB_SUCCESS, index->InsertEntry(row, rid, nullptr));
   }
+  LOG(WARNING)<<"checkpoint03";
   // Test Scan
   std::vector<RowId> ret;
   for (int i = 0; i < 10; i++) {
@@ -65,6 +69,7 @@ TEST(BPlusTreeTests, BPlusTreeIndexSimpleTest) {
     ASSERT_EQ(DB_SUCCESS, index->ScanKey(row, ret, nullptr));
     ASSERT_EQ(rid.Get(), ret[i].Get());
   }
+  LOG(WARNING)<<"checkpoint04";
   // Iterator Scan
   IndexIterator iter = index->GetBeginIterator();
   uint32_t i = 0;
@@ -73,6 +78,7 @@ TEST(BPlusTreeTests, BPlusTreeIndexSimpleTest) {
     ASSERT_EQ(i, (*iter).second.GetSlotNum());
     i++;
   }
+  LOG(WARNING)<<"checkpoint05";
   index->Destroy();
   delete index;
   delete bpm_;

@@ -139,12 +139,10 @@ void DiskManager::DeAllocatePage(page_id_t logical_page_id) {
  * DONE
  */
 bool DiskManager::IsPageFree(page_id_t logical_page_id) {
-  int extents_id = logical_page_id / BITMAP_SIZE;
-  int page_offset = logical_page_id % BITMAP_SIZE - 1; // -1 to account for the bitmap page
-  if (page_offset < 0) {
-    // The first page in each extent is a bitmap page, not a data page.
+  if(logical_page_id >= MAX_VALID_PAGE_ID)//逻辑页号不合法
     return false;
-  }
+  int extents_id = logical_page_id / BITMAP_SIZE;
+  int page_offset = logical_page_id % BITMAP_SIZE;
 
   int bitmapPageId = 1 + extents_id * (BITMAP_SIZE + 1);
 

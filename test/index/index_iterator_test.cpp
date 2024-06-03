@@ -15,6 +15,7 @@ TEST(BPlusTreeTests, IndexIteratorTest) {
   KeyManager KP(table_schema, 16);
   BPlusTree tree(0, engine.bpm_, KP);
   // Generate insert record
+  LOG(WARNING)<<"checkpoint01";
   vector<GenericKey *> insert_key;
   for (int i = 1; i <= 50; i++) {
     GenericKey *key = KP.InitKey();
@@ -24,6 +25,7 @@ TEST(BPlusTreeTests, IndexIteratorTest) {
     tree.Insert(key, RowId(i * 100), nullptr);
   }
   // Generate delete record
+  LOG(WARNING)<<"checkpoint02";
   vector<GenericKey *> delete_key;
   for (int i = 2; i <= 50; i += 2) {
     GenericKey *key = KP.InitKey();
@@ -33,6 +35,7 @@ TEST(BPlusTreeTests, IndexIteratorTest) {
     tree.Remove(key);
   }
   // Search keys
+  LOG(WARNING)<<"checkpoint03";
   vector<RowId> v;
   vector<GenericKey *> not_delete_key;
   for (auto key : delete_key) {
