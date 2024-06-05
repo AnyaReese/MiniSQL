@@ -209,6 +209,11 @@ page_id_t InternalPage::RemoveAndReturnOnlyChild() {
  * to make sure the middle key is added to the recipient to maintain the invariant.
  * You also need to use BufferPoolManager to persist changes to the parent page id for those
  * pages that are moved to the recipient
+ *
+ * 1. 将自己的第一个 key 设置为 middle_key
+ * 2. 将自己的所有 key 和 value 移动到 recipient 中
+ * 3. size 设置为 0
+ *
  */
 void InternalPage::MoveAllTo(InternalPage *recipient, GenericKey *middle_key, BufferPoolManager *buffer_pool_manager) {
   SetKeyAt(0, middle_key);

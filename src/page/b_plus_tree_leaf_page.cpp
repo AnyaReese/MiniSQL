@@ -28,6 +28,7 @@ void LeafPage::Init(page_id_t page_id, page_id_t parent_id, int key_size, int ma
   SetSize(0);
   SetPageId(page_id);
   SetMaxSize(max_size);
+//  LOG(INFO)<<"max_size: "<<max_size;
   SetNextPageId(INVALID_PAGE_ID);
 }
 
