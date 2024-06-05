@@ -92,8 +92,7 @@ CatalogManager::CatalogManager(BufferPoolManager *buffer_pool_manager, LockManag
     next_index_id_ = catalog_meta_->GetNextIndexId();
 
     /** load table metadata */
-    for (auto iter : catalog_meta_->index_meta_pages_) {
-      auto table_id = iter.first;
+    for (auto iter : catalog_meta_->table_meta_pages_) {
       auto table_page_id = iter.second;
       auto table_meta_page = buffer_pool_manager_->FetchPage(table_page_id);
       TableMetadata *table_meta;
@@ -111,15 +110,15 @@ CatalogManager::CatalogManager(BufferPoolManager *buffer_pool_manager, LockManag
 
     /** load index metadata */
     for (auto iter : catalog_meta_->index_meta_pages_) {
-      auto index_id = iter.first;
       auto index_page_id = iter.second;
       auto index_meta_page = buffer_pool_manager_->FetchPage(index_page_id);
       IndexMetadata *index_meta;
       IndexMetadata::DeserializeFrom(reinterpret_cast<char *>(index_meta_page->GetData()), index_meta);
       auto table_info = tables_[index_meta->GetTableId()];
       IndexInfo *index_info = IndexInfo::Create();
-      index_info->Init(index_meta, tables_[index_meta->GetTableId()], buffer_pool_manager_);
+      index_info->Init(index_meta, table_info, buffer_pool_manager_);
       indexes_[index_meta->GetIndexId()] = index_info;
+      index_names_[table_info->GetTableName()][index_meta->GetIndexName()] = index_meta->GetIndexId();
       if (index_meta->GetIndexId() >= next_index_id_) {
         next_index_id_ = index_meta->GetIndexId() + 1;
       }
@@ -167,14 +166,14 @@ dberr_t CatalogManager::CreateTable(const string &table_name, TableSchema *schem
     page_id_t meta_page_id = 0;
     Page* meta_page = buffer_pool_manager_->NewPage(meta_page_id);
     page_id_t table_page_id = 0;
-    Page* table_page = buffer_pool_manager_->NewPage(table_page_id);
     table_id_t table_id = catalog_meta_->GetNextTableId();
-    TableMetadata* table_meta = TableMetadata::Create(table_id, table_name, table_page_id, schema);
-    TableHeap* table_heap = TableHeap::Create(buffer_pool_manager_, schema, txn, log_manager_, lock_manager_);
-    TableSchema* table_schema = nullptr;
+
+    /** 深拷贝 schema，因为 schema 有可能在函数执行期间被修改，影响正在创建的表 */
+    TableSchema* table_schema = TableSchema::DeepCopySchema(schema);
+    TableMetadata* table_meta = TableMetadata::Create(table_id, table_name, table_page_id, table_schema);
+    TableHeap* table_heap = TableHeap::Create(buffer_pool_manager_, table_schema, txn, log_manager_, lock_manager_);
 
     /** Create table metadata */
-    table_schema = table_schema->DeepCopySchema(schema); // ?
     table_meta->SerializeTo(reinterpret_cast<char*>(meta_page->GetData()));
 
     table_info = TableInfo::Create();
