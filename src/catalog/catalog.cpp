@@ -141,7 +141,6 @@ CatalogManager::~CatalogManager() {
  * 序列化表元数据到元数据页，并将新表的信息注册到内部映射中。最后，更新目录元数据。
  */
 dberr_t CatalogManager::CreateTable(const string &table_name, TableSchema *schema, Txn *txn, TableInfo *&table_info) {
-  try {
     auto iter = table_names_.find(table_name);
     if (iter != table_names_.end()) {  // 判断这个表是否已经存在
       return DB_TABLE_ALREADY_EXIST;
@@ -178,9 +177,6 @@ dberr_t CatalogManager::CreateTable(const string &table_name, TableSchema *schem
     catalog_meta_->SerializeTo(buf);                              // 将catalog序列化到CATALOG_META_PAGE_ID
     buffer_pool_manager_->UnpinPage(CATALOG_META_PAGE_ID, true);  // 脏页为true
     return DB_SUCCESS;
-  } catch (exception e) {
-    return DB_FAILED;
-  }
 }
 
 /** DONE
@@ -203,7 +199,7 @@ dberr_t CatalogManager::GetTable(const string &table_name, TableInfo *&table_inf
  * @return dberr_t 表示操作的状态（成功或具体错误类型）
  */
 dberr_t CatalogManager::GetTables(vector<TableInfo *> &tables) const {
-  if (tables_.size() == 0)  // 如果没有，返回failed
+  if (tables_.empty())  // 如果没有，返回failed
     return DB_FAILED;
   tables.resize(tables_.size());
   uint32_t i = 0;
@@ -222,7 +218,6 @@ dberr_t CatalogManager::GetTables(vector<TableInfo *> &tables) const {
 dberr_t CatalogManager::CreateIndex(const std::string &table_name, const string &index_name,
                                     const std::vector<std::string> &index_keys, Txn *txn, IndexInfo *&index_info,
                                     const string &index_type) {
-  try {
     // 先要保证这个表是存在的
     auto iter_find_table = table_names_.find(table_name);
     if (iter_find_table == table_names_.end()) {
@@ -296,9 +291,6 @@ dberr_t CatalogManager::CreateIndex(const std::string &table_name, const string 
     catalog_meta_->SerializeTo(buf);
     buffer_pool_manager_->UnpinPage(CATALOG_META_PAGE_ID, true);
     return DB_SUCCESS;
-  } catch (exception e) {
-    return DB_FAILED;
-  }
 }
 
 /** DONE
@@ -364,7 +356,6 @@ dberr_t CatalogManager::DropTable(const string &table_name) {
  * Drop index
  */
 dberr_t CatalogManager::DropIndex(const string &table_name, const string &index_name) {
-  try {
     // 先确定这个索引存在
     auto idx_table2name2id = index_names_.find(table_name);
     if (idx_table2name2id != index_names_.end()) {
@@ -380,9 +371,6 @@ dberr_t CatalogManager::DropIndex(const string &table_name, const string &index_
     } else {
       return DB_INDEX_NOT_FOUND;
     }
-  } catch (exception e) {
-    return DB_FAILED;
-  }
 }
 
 /**
@@ -401,7 +389,6 @@ dberr_t CatalogManager::FlushCatalogMetaPage() const {
  * @return DB_SUCCESS
  */
 dberr_t CatalogManager::LoadTable(const table_id_t table_id, const page_id_t page_id) {
-  try {
     // init
     Page *meta_page = nullptr;
     page_id_t table_page_id = 0;
@@ -429,9 +416,6 @@ dberr_t CatalogManager::LoadTable(const table_id_t table_id, const page_id_t pag
     table_names_[table_name_] = table_id;
     tables_[table_id] = table_info;
     return DB_SUCCESS;
-  } catch (exception e) {
-    return DB_FAILED;
-  }
 }
 
 /**
@@ -439,7 +423,6 @@ dberr_t CatalogManager::LoadTable(const table_id_t table_id, const page_id_t pag
  * LoadIndex
  */
 dberr_t CatalogManager::LoadIndex(const index_id_t index_id, const page_id_t page_id) {
-  try {
     Page *meta_page = buffer_pool_manager_->FetchPage(page_id);  // 先获取存储索引元信息的页
     IndexMetadata *index_meta = nullptr;
     index_meta->DeserializeFrom(meta_page->GetData(), index_meta);  // 然后将该元信息反序列化到index_meta中
@@ -458,9 +441,6 @@ dberr_t CatalogManager::LoadIndex(const index_id_t index_id, const page_id_t pag
     index_names_[table_name][index_name] = index_id;
     indexes_[index_id] = index_info;
     return DB_SUCCESS;
-  } catch (exception e) {
-    return DB_FAILED;
-  }
 }
 
 /**
