@@ -333,43 +333,239 @@ dberr_t ExecuteEngine::ExecuteShowTables(pSyntaxNode ast, ExecuteContext *contex
 }
 
 /**
- * TODO: Student Implement
+ * DONE: Student Implement
  */
 dberr_t ExecuteEngine::ExecuteCreateTable(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteCreateTable" << std::endl;
 #endif
-  return DB_FAILED;
+  if(current_db_.empty()){
+    std::cout << "no database selected" << endl;
+    return DB_FAILED;
+  }
+  string table_name = ast->child_->val_;
+  pSyntaxNode col_list_node = ast->child_->next_->child_;
+  vector<string> primary_key_list;
+  vector<string> unique_col;
+  vector<Column *> Columns;
+
+  int index = 0;
+  for (auto it = col_list_node; it != nullptr; it = it->next_) {  // 遍历操作链表
+    switch(it->type_){
+      case kNodeColumnDefinition:{ // 如果当前节点的类型是定义相关属性
+                                                    // 子节点会有属性名，类型
+        bool uniqueFlag = it->val_ != nullptr;    // 非空时是unique
+        string col_name = it->child_->val_;       // 属性名
+        string col_type = it->child_->next_->val_;// 属性类型
+        if(uniqueFlag) unique_col.emplace_back(col_name);
+        if(col_type == "int"){  // 根据属性类型决定操作
+          Column* column = new Column(col_name, kTypeInt, index++, true, uniqueFlag);
+          Columns.emplace_back(column);
+        }
+        else if(col_type == "char"){
+          int len;
+          try {
+            len = int32_t(stoi(it->child_->next_->child_->val_));
+          } catch (const std::invalid_argument& e) {
+            LOG(WARNING) << "Meet invalid char length: " << len;
+            return DB_FAILED;
+          }
+          Column* column = new Column(col_name, kTypeChar, len, index++, true, uniqueFlag);
+          Columns.emplace_back(column);
+        }
+        else if(col_type == "float"){
+          Column* column = new Column(col_name, kTypeFloat, index++, true, uniqueFlag );
+          Columns.emplace_back(column);
+        }
+        else{
+          LOG(WARNING) << "Meet invalid column type: " << col_name;
+          return DB_FAILED;
+        }
+        break;
+      }
+      case kNodeColumnList:{ // 如果是在定义主键
+        for (auto key_it = it->child_; key_it != nullptr; key_it = key_it->next_) {
+          primary_key_list.emplace_back(key_it->val_);
+        }
+        break;
+      }
+      default:{            // 如果都不是，异常
+        LOG(WARNING) << "Meet invalid column type: " << it->type_;
+        return DB_FAILED;
+        break;
+      }
+    }
+  }
+
+  Schema *schema = new Schema(Columns); // 新建一个Schema
+  CatalogManager *catalog_manager = context->GetCatalog();
+  Txn* transaction  = context->GetTransaction();
+  TableInfo *table_info = nullptr;
+  dberr_t CreateTableErr = catalog_manager->CreateTable(table_name, schema, transaction, table_info);
+  if (CreateTableErr != DB_SUCCESS) return CreateTableErr;  // 如果建表失败，则返回报错
+
+  for (auto it : unique_col) { // 为所有Unique列创建索引
+    string index_name = it + "_UNIQUE" + "_" + "ON_" + table_name;
+    IndexInfo* index_info(nullptr);
+    catalog_manager->CreateIndex(table_name, index_name, vector<string>{it}, transaction, index_info, "btree");
+  }
+
+  if (!primary_key_list.empty()) {    // 如果主键列表非空，表示需要定义主键
+    string index_name = table_name + "_PRIMARY_KEY";
+    IndexInfo* index_info(nullptr);
+    catalog_manager->CreateIndex(table_info->GetTableName(), index_name, primary_key_list, transaction, index_info, "bptree");
+  }
+  return DB_SUCCESS;
 }
 
 /**
- * TODO: Student Implement
+ * DONE: Student Implement
  */
 dberr_t ExecuteEngine::ExecuteDropTable(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteDropTable" << std::endl;
 #endif
- return DB_FAILED;
+  if(current_db_.empty()){
+    std::cout << "no database selected" << endl;
+    return DB_FAILED;
+  }
+
+  CatalogManager *catalog_manager = context->GetCatalog();
+
+  // Drop the table.
+  string table_name(ast->child_->val_);
+  dberr_t DropTableErr = catalog_manager->DropTable(table_name);
+  if (DropTableErr != DB_SUCCESS) return DropTableErr;
+
+
+  // Gain the index
+  std::vector<IndexInfo *> index_info_VEC;
+  dberr_t GetTableIndexesErr = catalog_manager->GetTableIndexes(table_name, index_info_VEC);
+  if (GetTableIndexesErr != DB_SUCCESS) return GetTableIndexesErr;
+
+  // Drop the index.
+  for (auto index_info : index_info_VEC) {
+    dberr_t DropIndexErr = catalog_manager->DropIndex(table_name, index_info->GetIndexName());
+    if (DropIndexErr != DB_SUCCESS) return DropIndexErr;
+  }
+  return DB_SUCCESS;
 }
 
 /**
- * TODO: Student Implement
+ * DONE: Student Implement
  */
 dberr_t ExecuteEngine::ExecuteShowIndexes(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteShowIndexes" << std::endl;
 #endif
-  return DB_FAILED;
+  if (current_db_.empty()) {
+    std::cout << "No database selected" << endl;
+    return DB_FAILED;
+  }
+
+  // Get all tables to get indexes.
+  std::vector<TableInfo *> table_info_VEC;
+  CatalogManager *catalog_manager = context->GetCatalog();
+  dberr_t GetTablesErr = catalog_manager->GetTables(table_info_VEC);
+  if(GetTablesErr == DB_FAILED) return GetTablesErr;
+
+
+  // Use map to store the table name and its index info.
+  string table_title("Table");
+  string index_title("Index");
+  uint max_width_table = table_title.length();
+  uint max_width_index = index_title.length();
+
+  for (auto table_info : table_info_VEC) {
+    std::vector<IndexInfo *> index_info_VEC;
+    string table_name = table_info->GetTableName();
+    catalog_manager->GetTableIndexes(table_name, index_info_VEC);
+    unsigned int table_length = table_info->GetTableName().length();
+    max_width_table = (max_width_table > table_length) ?
+                                                       max_width_table : table_length;
+    for(auto index_info : index_info_VEC){
+      unsigned int info_length = index_info->GetIndexName().length();
+      max_width_index = (max_width_index > info_length) ?
+                                                        max_width_index : info_length;
+    }
+  }
+
+  cout << "+" << setfill('-') << setw(max_width_table + 2)  << "" << "+";
+  cout << setfill('-') << setw(max_width_index + 2) << "" << "+" << endl;
+
+  cout << "| " << std::left << setfill(' ') << setw(max_width_table) << table_title << " |";
+  cout << " " << std::left << setfill(' ') << setw(max_width_index) << index_title << " |" << endl;
+
+  cout << "+" << setfill('-') << setw(max_width_table + 2)  << "" << "+";
+  cout << setfill('-') << setw(max_width_index + 2) << "" << "+" << endl;
+
+  for (auto table_info: table_info_VEC) {
+    vector<IndexInfo*> index_info_VEC;
+    string table_name = table_info->GetTableName();
+    catalog_manager->GetTableIndexes(table_name, index_info_VEC);
+    for(auto index_info : index_info_VEC) {
+      cout << "| " << std::left << setfill(' ') << setw(max_width_table) << table_info->GetTableName() << " |";
+      cout << " " << std::left << setfill(' ') << setw(max_width_index) << index_info->GetIndexName() << " |" << endl;
+    }
+  }
+  cout << "+" << setfill('-') << setw(max_width_table + 2)  << "" << "+";
+  cout << setfill('-') << setw(max_width_index + 2) << "" << "+" << endl;
+
+  return DB_SUCCESS;
 }
 
 /**
- * TODO: Student Implement
+ * DONE: Student Implement
  */
 dberr_t ExecuteEngine::ExecuteCreateIndex(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteCreateIndex" << std::endl;
 #endif
-  return DB_FAILED;
+  if (current_db_.empty()) { // 还没有选择数据库
+    cout << "No database selected" << endl;
+    return DB_FAILED;
+  }
+  CatalogManager *catalog_manager = context->GetCatalog();
+  string index_name(ast->child_->val_); // 索引名
+  string table_name(ast->child_->next_->val_);  // 列表名
+  string index_type("bptree");  // 默认是bptree
+  if (ast->child_->next_->next_->next_ != nullptr) {  // 如果有指定的类型，则更新
+    index_type = string(ast->child_->next_->next_->next_->child_->val_);
+  }
+
+  vector<string> column_names;
+  for (auto it = ast->child_->next_->next_->child_; it != nullptr; it = it->next_) {
+    column_names.emplace_back(it->val_);
+  }
+
+  // Get table.
+  TableInfo *table_info;
+  dberr_t GetTableErr = catalog_manager->GetTable(table_name, table_info);
+  if (GetTableErr != DB_SUCCESS) return GetTableErr;
+
+  // Create index on the table.
+  IndexInfo *index_info;
+  Txn* transaction = context->GetTransaction();
+  dberr_t CreateIndexErr = catalog_manager->CreateIndex(table_name, index_name, column_names, transaction, index_info, index_type);
+  if (CreateIndexErr != DB_SUCCESS) return CreateIndexErr;
+  return DB_SUCCESS;
+  // // Insert old records into the new index.
+  // auto row_begin = table_info->GetTableHeap()->Begin(transaction);
+  // auto row_end = table_info->GetTableHeap()->End();
+  // for (auto row = row_begin; row != row_end; ++row) {
+  //   auto rid = (*row).GetRowId();
+  //   // Get related fields.
+  //   vector<Field> fields;
+  //   for (auto col : index_info->GetIndexKeySchema()->GetColumns()) {
+  //     fields.push_back(*(*row).GetField(col->GetTableInd()));
+  //   }
+  //   // The row to be inserted into index.
+  //   Row row_idx(fields);
+  //   dberr_t InsertEntryErr = index_info->GetIndex()->InsertEntry(row_idx, rid, transaction);
+  //   if (InsertEntryErr != DB_SUCCESS) return InsertEntryErr;
+  // }
+  // cout << "Create index " << index_name << endl;
+
 }
 
 /**
@@ -379,7 +575,33 @@ dberr_t ExecuteEngine::ExecuteDropIndex(pSyntaxNode ast, ExecuteContext *context
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteDropIndex" << std::endl;
 #endif
-  return DB_FAILED;
+  if (current_db_.empty()) { // 还没有选择数据库
+    cout << "No database selected" << endl;
+    return DB_FAILED;
+  }
+
+  CatalogManager* catalog_manager = context->GetCatalog();
+
+  string index_name = ast->child_->val_; // 要删除的索引的名字
+  bool delete_at_least_once=false;
+  vector<TableInfo *> table_info_VEC;
+  dberr_t GetTablesErr = catalog_manager->GetTables(table_info_VEC);
+  if (GetTablesErr != DB_SUCCESS) return GetTablesErr;
+
+  for (auto table_info : table_info_VEC) {  // 遍历所有表
+    IndexInfo *index_info;
+    string table_name = table_info->GetTableName();
+    dberr_t GetIndexErr = catalog_manager->GetIndex(table_name, index_name, index_info);
+    if (GetIndexErr == DB_SUCCESS) {  // 如果找到这个索引
+      catalog_manager->DropIndex(table_name, index_name);
+      delete_at_least_once = true;
+    }
+  }
+  if (!delete_at_least_once) {
+    std::cout << "No related table found." << endl;
+    return DB_INDEX_NOT_FOUND;
+  }
+  return DB_SUCCESS;
 }
 
 dberr_t ExecuteEngine::ExecuteTrxBegin(pSyntaxNode ast, ExecuteContext *context) {
@@ -410,7 +632,48 @@ dberr_t ExecuteEngine::ExecuteExecfile(pSyntaxNode ast, ExecuteContext *context)
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteExecfile" << std::endl;
 #endif
-  return DB_FAILED;
+  // string file_name(ast->child_->val_);
+  // ifstream file(file_name, ios::in);
+  // // Read in the commands in the file into the vector.
+  // exec_file_cmds_.resize(0);
+  // exec_file_duration_time_cnt_ = 0;
+  // is_exec_file_ = true;
+  // int cnt = 0;
+  // char ch;
+  // const int buf_size = 1024;
+  // char cmd[buf_size];
+  // memset(cmd, 0, buf_size);
+  // if (file.is_open()) {
+  //   while (file.get(ch)) {
+  //     // Judge if a whole command is gotten.
+  //     cmd[cnt++] = ch;
+  //     if (ch == ';') {
+  //       file.get(ch);  // Get the '\n' after ';'.
+
+  //       exec_file_cmds_.emplace_back(cmd);
+
+  //       YY_BUFFER_STATE bp = yy_scan_string(cmd);
+  //       yy_switch_to_buffer(bp);
+  //       MinisqlParserInit();
+  //       yyparse();
+  //       auto result = Execute(MinisqlGetParserRootNode());
+  //       MinisqlParserFinish();
+  //       yy_delete_buffer(bp);
+  //       yylex_destroy();
+  //       ExecuteInformation(result);
+  //       if (result == DB_QUIT) {
+  //         break;
+  //       }
+  //       memset(cmd, 0, buf_size);
+  //       cnt = 0;
+  //     }
+  //   }
+  //   file.close();
+  // }
+  // exec_file_cmds_iter_ = exec_file_cmds_.begin();
+  freopen(ast->child_->val_, "r", stdin);
+  // Process the commands one by one.
+  return DB_SUCCESS;
 }
 
 /**
@@ -420,5 +683,5 @@ dberr_t ExecuteEngine::ExecuteQuit(pSyntaxNode ast, ExecuteContext *context) {
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteQuit" << std::endl;
 #endif
- return DB_FAILED;
+  return DB_QUIT;
 }

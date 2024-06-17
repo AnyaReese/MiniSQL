@@ -2,6 +2,7 @@
 
 // TODO: Update interface implementation if apply recovery
 
+// 初始化页面，包括设置页面ID、前一个页面ID、下一个页面ID、空闲空间指针和元组数量。
 void TablePage::Init(page_id_t page_id, page_id_t prev_id, LogManager *log_mgr, Txn *txn) {
   memcpy(GetData(), &page_id, sizeof(page_id));
   SetPrevPageId(prev_id);
@@ -10,6 +11,8 @@ void TablePage::Init(page_id_t page_id, page_id_t prev_id, LogManager *log_mgr, 
   SetTupleCount(0);
 }
 
+
+// 插入一个新的元组。如果有可重用的空闲槽位则复用，否则使用空闲空间插入新的元组，并更新相关的元组偏移和大小信息。
 bool TablePage::InsertTuple(Row &row, Schema *schema, Txn *txn, LockManager *lock_manager, LogManager *log_manager) {
   uint32_t serialized_size = row.GetSerializedSize(schema);
   ASSERT(serialized_size > 0, "Can not have empty row.");
@@ -44,6 +47,7 @@ bool TablePage::InsertTuple(Row &row, Schema *schema, Txn *txn, LockManager *loc
   return true;
 }
 
+// 标记元组为已删除。通过设置元组大小的删除标志位来标记删除。
 bool TablePage::MarkDelete(const RowId &rid, Txn *txn, LockManager *lock_manager, LogManager *log_manager) {
   uint32_t slot_num = rid.GetSlotNum();
   // If the slot number is invalid, abort.
@@ -62,6 +66,7 @@ bool TablePage::MarkDelete(const RowId &rid, Txn *txn, LockManager *lock_manager
   return true;
 }
 
+// 更新现有元组。如果有足够的空闲空间直接更新，否则需要通过删除后重新插入来完成更新操作。更新时维护所有元组的偏移。
 bool TablePage::UpdateTuple(Row &new_row, Row *old_row, Schema *schema, Txn *txn, LockManager *lock_manager,
                             LogManager *log_manager) {
   ASSERT(old_row != nullptr && old_row->GetRowId().Get() != INVALID_ROWID.Get(), "invalid old row.");
@@ -103,6 +108,7 @@ bool TablePage::UpdateTuple(Row &new_row, Row *old_row, Schema *schema, Txn *txn
   return true;
 }
 
+// 实际删除元组，包括调整空闲空间指针和更新元组偏移。用于在事务提交时实际删除元组。
 void TablePage::ApplyDelete(const RowId &rid, Txn *txn, LogManager *log_manager) {
   uint32_t slot_num = rid.GetSlotNum();
   ASSERT(slot_num < GetTupleCount(), "Cannot have more slots than tuples.");
@@ -132,6 +138,7 @@ void TablePage::ApplyDelete(const RowId &rid, Txn *txn, LogManager *log_manager)
   }
 }
 
+// 回滚删除操作，解除元组的删除标记。用于在事务回滚时恢复元组。
 void TablePage::RollbackDelete(const RowId &rid, Txn *txn, LogManager *log_manager) {
   uint32_t slot_num = rid.GetSlotNum();
   ASSERT(slot_num < GetTupleCount(), "We can't have more slots than tuples.");
@@ -143,12 +150,13 @@ void TablePage::RollbackDelete(const RowId &rid, Txn *txn, LogManager *log_manag
   }
 }
 
+// 获取元组的数据，将其反序列化到提供的 Row 对象中。检查元组是否存在以及是否被删除。
 bool TablePage::GetTuple(Row *row, Schema *schema, Txn *txn, LockManager *lock_manager) {
   ASSERT(row != nullptr && row->GetRowId().Get() != INVALID_ROWID.Get(), "Invalid row.");
   // Get the current slot number.
   uint32_t slot_num = row->GetRowId().GetSlotNum();
   // If somehow we have more slots than tuples, abort the recovery.
-  if (slot_num >= GetTupleCount()) {
+    if (slot_num >= GetTupleCount()) {
     return false;
   }
   // Otherwise get the current tuple size too.
@@ -164,6 +172,7 @@ bool TablePage::GetTuple(Row *row, Schema *schema, Txn *txn, LockManager *lock_m
   return true;
 }
 
+// 查找并返回第一个有效（未被删除）的元组的 RowId。
 bool TablePage::GetFirstTupleRid(RowId *first_rid) {
   // Find and return the first valid tuple.
   for (uint32_t i = 0; i < GetTupleCount(); i++) {
@@ -176,6 +185,7 @@ bool TablePage::GetFirstTupleRid(RowId *first_rid) {
   return false;
 }
 
+// 查找并返回当前 RowId 之后的第一个有效（未被删除）的元组的 RowId。用于遍历元组。
 bool TablePage::GetNextTupleRid(const RowId &cur_rid, RowId *next_rid) {
   ASSERT(cur_rid.GetPageId() == GetTablePageId(), "Wrong table!");
   // Find and return the first valid tuple after our current slot number.

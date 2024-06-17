@@ -27,6 +27,7 @@
  * The ExecutorTest class defines a test fixture for executor tests.
  * Any test that is defined as part of the `ExecutorTest` fixture
  * will have access to the helper functions defined below.
+ * ExecutorTest类定义了执行器测试的测试装置。任何作为ExecutorTest装置的一部分定义的测试都将可以访问下面定义的辅助函数
  */
 using Fields = std::vector<Field>;
 
@@ -35,7 +36,7 @@ class ExecutorTest : public ::testing::Test {
   /** Called before every executor test. */
   void SetUp() override {
     ::testing::Test::SetUp();
-
+    LOG(WARNING)<<"IMHERE";
     // Initialize the database subsystems
     db_test_ = new DBStorageEngine("executor_test.db", true);
     auto &catalog_01 = db_test_->catalog_mgr_;

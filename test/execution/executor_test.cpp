@@ -13,6 +13,7 @@ TEST_F(ExecutorTest, SimpleSeqScanTest) {
   // Construct query plan
   TableInfo *table_info;
   GetExecutorContext()->GetCatalog()->GetTable("table-1", table_info);
+  LOG(WARNING)<<"checkpoint00";
   const Schema *schema = table_info->GetSchema();
   auto col_a = MakeColumnValueExpression(*schema, 0, "id");
   auto col_b = MakeColumnValueExpression(*schema, 0, "name");
@@ -21,9 +22,11 @@ TEST_F(ExecutorTest, SimpleSeqScanTest) {
   auto out_schema = MakeOutputSchema({{"id", col_a}, {"name", col_b}});
   auto plan = make_shared<SeqScanPlanNode>(out_schema, table_info->GetTableName(), predicate);
   // Execute
-  std::vector<Row> result_set{};
-  GetExecutionEngine()->ExecutePlan(plan, &result_set, GetTxn(), GetExecutorContext());
 
+  std::vector<Row> result_set{};
+  LOG(WARNING)<<"checkpoint01";
+  GetExecutionEngine()->ExecutePlan(plan, &result_set, GetTxn(), GetExecutorContext());
+  LOG(WARNING)<<"checkpoint02";
   // Verify
   ASSERT_EQ(result_set.size(), 500);
   for (const auto &row : result_set) {

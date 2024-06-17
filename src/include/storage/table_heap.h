@@ -114,10 +114,11 @@ class TableHeap {
         log_manager_(log_manager),
         lock_manager_(lock_manager) {
     auto first_page = reinterpret_cast<TablePage *>(buffer_pool_manager->NewPage(first_page_id_));
-    ASSERT(first_page != nullptr, "[ERROR] overflow");
+    ASSERT(first_page != nullptr, "ERROR: cannot create firstPage in table heap, please check");
+    // 初始化页面，作为堆的首页，它的前一个页面应该是最后一页的下一个位置
     first_page->Init(first_page_id_, PAGE_SIZE, log_manager, txn);
-    schema_ = schema;
     buffer_pool_manager->UnpinPage(first_page_id_, true);
+    schema_ = schema;
   };
 
   explicit TableHeap(BufferPoolManager *buffer_pool_manager, page_id_t first_page_id, Schema *schema,
@@ -131,6 +132,7 @@ class TableHeap {
  private:
   BufferPoolManager *buffer_pool_manager_;
   page_id_t first_page_id_;
+  uint32_t page_num{0};
   Schema *schema_;
   [[maybe_unused]] LogManager *log_manager_;
   [[maybe_unused]] LockManager *lock_manager_;
