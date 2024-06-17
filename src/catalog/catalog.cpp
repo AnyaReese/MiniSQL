@@ -64,7 +64,7 @@ uint32_t CatalogMeta::GetSerializedSize() const {
   return magic_size + table_size + index_size + table_page_size + index_page_size;
 }
 
-CatalogMeta::CatalogMeta() {}
+CatalogMeta::CatalogMeta() = default;
 
 /** DONE
  * Constructor for CatalogManager
@@ -156,14 +156,13 @@ dberr_t CatalogManager::CreateTable(const string &table_name, TableSchema *schem
     TableSchema *schema_ = nullptr;
 
     table_id = catalog_meta_->GetNextTableId();  // 获取一个table_id
-    schema_ = schema_->DeepCopySchema(schema);  // 深拷贝，使得如果schema在函数执行期间被修改，不会影响到正在创建的表
+    schema_ = Schema::DeepCopySchema(schema);  // 深拷贝，使得如果schema在函数执行期间被修改，不会影响到正在创建的表
     meta_page = buffer_pool_manager_->NewPage(meta_page_id);                          // 获得一个新的meta_page
     table_page = buffer_pool_manager_->NewPage(table_page_id);                        // 获得一个新的table_page
-    table_meta_ = table_meta_->Create(table_id, table_name, table_page_id, schema_);  // 初始化table_meta
+    table_meta_ = TableMetadata::Create(table_id, table_name, table_page_id, schema_);  // 初始化table_meta
     table_meta_->SerializeTo(meta_page->GetData());  // 将table_meta_序列化到meta_page中
-    table_heap_ =
-        table_heap_->Create(buffer_pool_manager_, schema_, txn, log_manager_, lock_manager_);  // 初始化table_heap
-    table_info = table_info->Create();                                                         // 初始化table_info
+    table_heap_ = TableHeap::Create(buffer_pool_manager_, schema_, txn, log_manager_, lock_manager_);  // 初始化table_heap
+    table_info = TableInfo::Create();                                                         // 初始化table_info
     table_info->Init(table_meta_, table_heap_);
 
     // 赋值table_names_和tables_，使能通过table_name找到对应的表的元信息和堆表存储
@@ -244,7 +243,7 @@ dberr_t CatalogManager::CreateIndex(const std::string &table_name, const string 
     // index key map
     std::vector<std::uint32_t> key_map{};
     // 初始化index info
-    index_info = index_info->Create();
+    index_info = IndexInfo::Create();
 
     // get table schema
     table_id = table_names_[table_name];
@@ -253,7 +252,7 @@ dberr_t CatalogManager::CreateIndex(const std::string &table_name, const string 
     // create key map
     uint32_t column_index = 0;
     // 利用传递进来的index_keys中的column的名字获取该行的index，并存储到key_map中
-    for (auto column_name : index_keys) {
+    for (const auto& column_name : index_keys) {
       if (schema_->GetColumnIndex(column_name, column_index) == DB_COLUMN_NAME_NOT_EXIST) {
         return DB_COLUMN_NAME_NOT_EXIST;
       }
@@ -264,7 +263,7 @@ dberr_t CatalogManager::CreateIndex(const std::string &table_name, const string 
     // 获取index id
     index_id = catalog_meta_->GetNextIndexId();
     // 利用四个元素创建索引元信息
-    index_meta_ = index_meta_->Create(index_id, index_name, table_id, key_map);
+    index_meta_ = IndexMetadata::Create(index_id, index_name, table_id, key_map);
     // 将索引元信息序列化到meta_page中
     index_meta_->SerializeTo(meta_page->GetData());
     // 创建index_info
@@ -392,24 +391,24 @@ dberr_t CatalogManager::LoadTable(const table_id_t table_id, const page_id_t pag
     // init
     Page *meta_page = nullptr;
     page_id_t table_page_id = 0;
-    string table_name_ = "";
+    string table_name_;
     TableMetadata *table_meta_ = nullptr;
     TableHeap *table_heap_ = nullptr;
     TableSchema *schema_ = nullptr;
     TableInfo *table_info = nullptr;
     // 先初始化一下table_info
-    table_info = table_info->Create();
+    table_info = TableInfo::Create();
     // 获取table_meta_page
     meta_page = buffer_pool_manager_->FetchPage(page_id);
     // 将该页中的data反序列化到table_meta中
-    table_meta_->DeserializeFrom(meta_page->GetData(), table_meta_);
+    TableMetadata::DeserializeFrom(meta_page->GetData(), table_meta_);
     // 要确保传进来的table_id和传进来的meta_page中记录的id是一样的
     ASSERT(table_id == table_meta_->GetTableId(), "Load wrong table");
     // 获取table_name, first_page, schema创建table_heap
     table_name_ = table_meta_->GetTableName();
     table_page_id = table_meta_->GetFirstPageId();
     schema_ = table_meta_->GetSchema();
-    table_heap_ = table_heap_->Create(buffer_pool_manager_, table_page_id, schema_, nullptr, nullptr);
+    table_heap_ = TableHeap::Create(buffer_pool_manager_, table_page_id, schema_, nullptr, nullptr);
     // 再用前面反序列化出来的table_meta和table_heap初始化table_info
     table_info->Init(table_meta_, table_heap_);
     // 存储name->id->info的映射
@@ -425,7 +424,7 @@ dberr_t CatalogManager::LoadTable(const table_id_t table_id, const page_id_t pag
 dberr_t CatalogManager::LoadIndex(const index_id_t index_id, const page_id_t page_id) {
     Page *meta_page = buffer_pool_manager_->FetchPage(page_id);  // 先获取存储索引元信息的页
     IndexMetadata *index_meta = nullptr;
-    index_meta->DeserializeFrom(meta_page->GetData(), index_meta);  // 然后将该元信息反序列化到index_meta中
+    IndexMetadata::DeserializeFrom(meta_page->GetData(), index_meta);  // 然后将该元信息反序列化到index_meta中
 
     table_id_t table_id = 0;
     table_id = index_meta->GetTableId();  // 获取表id
@@ -433,9 +432,9 @@ dberr_t CatalogManager::LoadIndex(const index_id_t index_id, const page_id_t pag
     table_info = tables_[table_id];  // 利用表id获取table_info
     IndexInfo *index_info = nullptr;
     index_info->Init(index_meta, table_info, buffer_pool_manager_);  // 利用index_meta和table_info创建index_info
-    string table_name = "";
+    string table_name;
     table_name = table_info->GetTableName();  // 获取表名
-    string index_name = "";
+    string index_name;
     index_name = index_meta->GetIndexName();  // 获取索引名字
     // 存储<table_name, index_name> -> index_id -> index_info的映射关系
     index_names_[table_name][index_name] = index_id;
