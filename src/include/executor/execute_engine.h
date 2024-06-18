@@ -73,9 +73,12 @@ class ExecuteEngine {
 
   dberr_t ExecuteQuit(pSyntaxNode ast, ExecuteContext *context);
 
- private:
+  private:
   std::unordered_map<std::string, DBStorageEngine *> dbs_; /** all opened databases */
   std::string current_db_;                                 /** current database */
+  
+  public:// RFY UPDATE, RECORD FILE TIME
+  std::chrono::time_point<std::chrono::system_clock> file_start_time;
 };
 
 #endif  // MINISQL_EXECUTE_ENGINE_H

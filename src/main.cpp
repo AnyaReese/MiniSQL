@@ -34,10 +34,10 @@ void InputCommand(char *input, const int len, ExecuteEngine* engine) {
       freopen("/dev/tty", "r", stdin);
       // 记录结束时间，同时输出文件花费的总时间
       auto file_stop_time = std::chrono::system_clock::now();
-//      auto file_start_time = engine->file_start_time;
-//      double duration_time = double((std::chrono::duration_cast<std::chrono::milliseconds>(file_stop_time-file_start_time).count()));
-//      cout << "End of execution file, total time(" << fixed << setprecision(4) << duration_time/1000 << "sec)." << std::endl;
-//      cout << "minisql >";
+      auto file_start_time = engine->file_start_time;
+      double duration_time = double((std::chrono::duration_cast<std::chrono::milliseconds>(file_stop_time-file_start_time).count()));
+      cout << "End of execution file, total time(" << fixed << setprecision(4) << duration_time/1000 << "sec)." << std::endl;
+      cout << "minisql >";
       continue;
     }
     input[i++] = ch;

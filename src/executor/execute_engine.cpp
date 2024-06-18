@@ -633,47 +633,10 @@ dberr_t ExecuteEngine::ExecuteExecfile(pSyntaxNode ast, ExecuteContext *context)
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteExecfile" << std::endl;
 #endif
-   string file_name(ast->child_->val_);
-   ifstream file(file_name, ios::in);
-   // Read in the commands in the file into the vector.
-   exec_file_cmds_.resize(0);
-   exec_file_duration_time_cnt_ = 0;
-   is_exec_file_ = true;
-   int cnt = 0;
-   char ch;
-   const int buf_size = 1024;
-   char cmd[buf_size];
-   memset(cmd, 0, buf_size);
-   if (file.is_open()) {
-     while (file.get(ch)) {
-       // Judge if a whole command is gotten.
-       cmd[cnt++] = ch;
-       if (ch == ';') {
-         file.get(ch);  // Get the '\n' after ';'.
-
-         exec_file_cmds_.emplace_back(cmd);
-
-         YY_BUFFER_STATE bp = yy_scan_string(cmd);
-         yy_switch_to_buffer(bp);
-         MinisqlParserInit();
-         yyparse();
-         auto result = Execute(MinisqlGetParserRootNode());
-         MinisqlParserFinish();
-         yy_delete_buffer(bp);
-         yylex_destroy();
-         ExecuteInformation(result);
-         if (result == DB_QUIT) {
-           break;
-         }
-         memset(cmd, 0, buf_size);
-         cnt = 0;
-       }
-     }
-     file.close();
-   }
-   exec_file_cmds_iter_ = exec_file_cmds_.begin();
-//  freopen(ast->child_->val_, "r", stdin);
-  // Process the commands one by one.
+  // 当前文件的目录——cmake_build_debug_wsl>bin
+  // 重定向输入流到文件中执行sql语句，在main中：若文件到头了，重定向回终端输入
+  file_start_time = std::chrono::system_clock::now(); // 记录文件开始读的时间
+  freopen(ast->child_->val_, "r", stdin);
   return DB_SUCCESS;
 }
 
