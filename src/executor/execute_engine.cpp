@@ -633,46 +633,46 @@ dberr_t ExecuteEngine::ExecuteExecfile(pSyntaxNode ast, ExecuteContext *context)
 #ifdef ENABLE_EXECUTE_DEBUG
   LOG(INFO) << "ExecuteExecfile" << std::endl;
 #endif
-  // string file_name(ast->child_->val_);
-  // ifstream file(file_name, ios::in);
-  // // Read in the commands in the file into the vector.
-  // exec_file_cmds_.resize(0);
-  // exec_file_duration_time_cnt_ = 0;
-  // is_exec_file_ = true;
-  // int cnt = 0;
-  // char ch;
-  // const int buf_size = 1024;
-  // char cmd[buf_size];
-  // memset(cmd, 0, buf_size);
-  // if (file.is_open()) {
-  //   while (file.get(ch)) {
-  //     // Judge if a whole command is gotten.
-  //     cmd[cnt++] = ch;
-  //     if (ch == ';') {
-  //       file.get(ch);  // Get the '\n' after ';'.
+   string file_name(ast->child_->val_);
+   ifstream file(file_name, ios::in);
+   // Read in the commands in the file into the vector.
+   exec_file_cmds_.resize(0);
+   exec_file_duration_time_cnt_ = 0;
+   is_exec_file_ = true;
+   int cnt = 0;
+   char ch;
+   const int buf_size = 1024;
+   char cmd[buf_size];
+   memset(cmd, 0, buf_size);
+   if (file.is_open()) {
+     while (file.get(ch)) {
+       // Judge if a whole command is gotten.
+       cmd[cnt++] = ch;
+       if (ch == ';') {
+         file.get(ch);  // Get the '\n' after ';'.
 
-  //       exec_file_cmds_.emplace_back(cmd);
+         exec_file_cmds_.emplace_back(cmd);
 
-  //       YY_BUFFER_STATE bp = yy_scan_string(cmd);
-  //       yy_switch_to_buffer(bp);
-  //       MinisqlParserInit();
-  //       yyparse();
-  //       auto result = Execute(MinisqlGetParserRootNode());
-  //       MinisqlParserFinish();
-  //       yy_delete_buffer(bp);
-  //       yylex_destroy();
-  //       ExecuteInformation(result);
-  //       if (result == DB_QUIT) {
-  //         break;
-  //       }
-  //       memset(cmd, 0, buf_size);
-  //       cnt = 0;
-  //     }
-  //   }
-  //   file.close();
-  // }
-  // exec_file_cmds_iter_ = exec_file_cmds_.begin();
-  freopen(ast->child_->val_, "r", stdin);
+         YY_BUFFER_STATE bp = yy_scan_string(cmd);
+         yy_switch_to_buffer(bp);
+         MinisqlParserInit();
+         yyparse();
+         auto result = Execute(MinisqlGetParserRootNode());
+         MinisqlParserFinish();
+         yy_delete_buffer(bp);
+         yylex_destroy();
+         ExecuteInformation(result);
+         if (result == DB_QUIT) {
+           break;
+         }
+         memset(cmd, 0, buf_size);
+         cnt = 0;
+       }
+     }
+     file.close();
+   }
+   exec_file_cmds_iter_ = exec_file_cmds_.begin();
+//  freopen(ast->child_->val_, "r", stdin);
   // Process the commands one by one.
   return DB_SUCCESS;
 }
